@@ -1,0 +1,19 @@
+{
+  "name": "peng-kkaki",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "description": "펭까기 - 빙판 밀치기 멀티플레이 게임",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch-path=server --watch-path=shared server/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "three": "^0.170.0",
+    "ws": "^8.18.0"
+  }
+}

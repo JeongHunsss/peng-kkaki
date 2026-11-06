@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>펭까기</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐧</text></svg>" />
+    <link rel="stylesheet" href="/style.css" />
+    <script type="importmap">
+      { "imports": { "three": "/vendor/three.module.js" } }
+    </script>
+  </head>
+  <body>
+    <!-- 메뉴 -->
+    <section id="screen-menu" class="screen card-screen">
+      <div class="card">
+        <h1 class="logo">펭까기 <span>🐧</span></h1>
+        <p class="sub">빙판 위 펭귄 밀치기 — 마지막까지 남아라!</p>
+        <label class="field">닉네임 <input id="name-input" maxlength="12" placeholder="펭귄123" /></label>
+        <h3>혼자 연습 (봇과 대결)</h3>
+        <div class="row">
+          <label class="inline">봇 <input id="practice-bots" type="number" min="1" max="29" value="3" />명</label>
+          <button class="btn primary" id="btn-practice">연습 시작</button>
+        </div>
+        <h3>방</h3>
+        <div class="row">
+          <button class="btn primary" id="btn-create">방 만들기</button>
+        </div>
+        <div class="row">
+          <input id="code-input" maxlength="5" placeholder="방 코드" />
+          <button class="btn" id="btn-join">참가</button>
+        </div>
+        <h3>방 목록 <button class="btn tiny" id="btn-refresh-rooms">새로고침</button></h3>
+        <ul id="room-list" class="room-list"><li class="muted">열린 방이 없어요.</li></ul>
+        <details class="rules">
+          <summary>규칙 요약</summary>
+          <ul>
+            <li>모두 동시에 방향·세기를 정하고 동시에 출발해요. 남의 조준은 안 보여요.</li>
+            <li>말 중심이 판 밖으로 나가면 탈락. 판은 매 턴 녹아서 줄어들어요.</li>
+            <li>상자를 먹으면 아이템(앵커·세기 2배·크기 2배·분신)을 얻어요. 다음 턴부터 사용 가능.</li>
+            <li>탈락하면 유령이 되어 가장자리에 균열을 놓을 수 있어요. 균열 위에 멈춘 말은 다음 턴 세기 50% 제한.</li>
+          </ul>
+        </details>
+      </div>
+    </section>
+
+    <!-- 대기실 -->
+    <section id="screen-room" class="screen card-screen hidden">
+      <div class="card wide">
+        <div class="room-head">
+          <h2>방 코드 <span id="room-code" class="code"></span></h2>
+          <button class="btn small" id="btn-copy-link">링크 복사</button>
+        </div>
+        <div class="room-body">
+          <div>
+            <h3>참가자 <span id="room-count"></span></h3>
+            <ul id="room-members" class="member-list"></ul>
+            <div id="room-spectators" class="muted"></div>
+            <div class="row" id="bot-buttons">
+              <button class="btn small" id="btn-add-bot">🤖 봇 추가</button>
+              <button class="btn small" id="btn-remove-bot">봇 빼기</button>
+            </div>
+          </div>
+          <div>
+            <h3>방 설정</h3>
+            <label class="field">최대 인원
+              <select id="set-max"></select>
+            </label>
+            <label class="field">판 수
+              <select id="set-rounds"><option>1</option><option>3</option><option>5</option></select>
+            </label>
+            <label class="check"><input type="checkbox" id="set-items" /> 아이템</label>
+            <label class="check"><input type="checkbox" id="set-freechat" /> 자유 채팅</label>
+          </div>
+        </div>
+        <div id="room-chat-slot" class="room-chat-slot"></div>
+        <div class="row end">
+          <button class="btn" id="btn-leave-room">나가기</button>
+          <button class="btn primary" id="btn-start">시작</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 게임 -->
+    <section id="screen-game" class="screen hidden">
+      <aside id="players" class="players"></aside>
+      <div id="stage" class="stage">
+        <canvas id="three"></canvas>
+        <div id="labels" class="labels"></div>
+        <div id="cam-ctrl" class="cam-ctrl">
+          <div id="cam-mode" class="cam-mode">🎯 내 시점</div>
+          <div class="cam-rot">
+            <button id="rot-left" title="시점 왼쪽으로 돌리기">⟲</button>
+            <span id="cam-angle" title="지금 내려다보는 각도">시점</span>
+            <button id="rot-right" title="시점 오른쪽으로 돌리기">⟳</button>
+            <button id="tilt-up" title="카메라 올리기 (위에서 내려다보기)">▲</button>
+            <button id="tilt-down" title="카메라 내리기 (앞을 보기)">▼</button>
+          </div>
+          <div id="cam-hint" class="cam-hint"></div>
+        </div>
+        <div id="hud-top" class="hud-top">
+          <div id="round-info"></div>
+          <div id="timer" class="timer"></div>
+        </div>
+        <canvas id="minimap" width="300" height="300"></canvas>
+        <div id="banner" class="banner"></div>
+        <div id="aim-pad" class="aim-pad"><span>여기를 당겼다 놓아서 조준</span></div>
+        <div id="aim-panel" class="aim-panel">
+          <div id="aim-readout" class="aim-readout"></div>
+          <div id="clone-toggle" class="seg hidden">
+            <button data-target="main" class="on">본체</button><button data-target="clone">분신</button>
+          </div>
+          <button id="btn-item" class="btn item-btn" disabled>아이템 없음</button>
+          <button id="btn-confirm" class="btn primary">확정</button>
+        </div>
+        <div id="ghost-hint" class="ghost-hint hidden">👻 유령 — 판 가장자리(바깥 30%)를 눌러 균열을 놓으세요</div>
+        <div id="overlay" class="overlay hidden"></div>
+      </div>
+      <aside id="chat-dock" class="chat-dock"></aside>
+    </section>
+
+    <!-- 채팅 (화면 사이를 옮겨 다님) -->
+    <div id="chat" class="chat hidden">
+      <div class="chat-head">
+        <span>채팅</span>
+        <span class="chat-tools">
+          <label title="욕설 필터"><input type="checkbox" id="chat-filter" checked /> 필터</label>
+          <label title="채팅 끄기"><input type="checkbox" id="chat-off" /> 끄기</label>
+          <button id="chat-expand" class="btn tiny">펼치기</button>
+        </span>
+      </div>
+      <div id="chat-log" class="chat-log"></div>
+      <div id="chat-quick" class="chat-quick"></div>
+      <form id="chat-form" class="chat-form">
+        <input id="chat-input" maxlength="60" placeholder="메시지 (60자)" autocomplete="off" />
+        <button class="btn small">전송</button>
+      </form>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="/js/main.js"></script>
+  </body>
+</html>
