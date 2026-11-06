@@ -212,7 +212,7 @@ test('지구 온난화: 출발 직전 구멍이 뚫리고, 그 위의 펭귄은 
   g.stop();
 });
 
-test('지구 온난화 구멍은 판 안쪽에 생기고 크기는 판과 무관하게 무작위(2~7)', () => {
+test('지구 온난화 구멍은 판 안쪽에 생기고 크기는 판과 무관하게 무작위(1.5~4)', () => {
   for (const n of [2, 30]) {
     const { g } = makeGame(n, { warmingChance: 1 });
     g.start();
@@ -220,10 +220,10 @@ test('지구 온난화 구멍은 판 안쪽에 생기고 크기는 판과 무관
     for (let i = 0; i < 200; i++) {
       const h = g.spawnHole();
       assert.ok(Math.hypot(h.x, h.y) + h.r <= g.round.radius + 0.01);
-      assert.ok(h.r >= 2 && h.r <= 7, `r=${h.r}`);
-      sizes.add(Math.round(h.r));
+      assert.ok(h.r >= 1.5 && h.r <= 4, `r=${h.r}`);
+      sizes.add(h.r.toFixed(1));
     }
-    assert.ok(sizes.size >= 5, '크기가 다양해야 함');
+    assert.ok(sizes.size >= 10, '크기가 다양해야 함');
     g.stop();
   }
 });

@@ -736,10 +736,10 @@ function drawMinimap() {
     x.stroke();
     x.setLineDash([]);
   }
-  for (const h of scene.holeGroup.children) {
+  for (const h of scene.holeList) {
     x.fillStyle = '#05253f';
     x.beginPath();
-    x.arc(h.position.x * k, h.position.z * k, (h.userData.r ?? 2.5) * k * h.scale.x, 0, Math.PI * 2);
+    x.arc(h.x * k, h.y * k, h.r * k, 0, Math.PI * 2);
     x.fill();
   }
   for (const b of scene.boxes.values()) {
