@@ -81,16 +81,13 @@ export class GameScene {
 
     // 빙판
     const iceTex = makeIceTexture();
-    this.board = new THREE.Mesh(
-      new THREE.CylinderGeometry(1, 1, 1, 128),
-      [
-        new THREE.MeshStandardMaterial({ color: '#a9dcf5', roughness: 0.4 }),
-        new THREE.MeshStandardMaterial({ map: iceTex, roughness: 0.45, metalness: 0 }), // 반사광이 너무 크게 번지지 않게
-        new THREE.MeshStandardMaterial({ color: '#7fb8d9' }),
-      ],
-    );
+    // 판 = (원 - 구멍들) 모양을 두께 1로 뽑아낸 메시. 구멍 안쪽에 얼음 벽이 보이고 그 아래로 바다가 보임
+    this.holeList = [];
+    this.board = new THREE.Mesh(new THREE.BufferGeometry(), [
+      new THREE.MeshStandardMaterial({ map: iceTex, roughness: 0.45, metalness: 0 }), // 윗면 (반사광이 너무 크게 번지지 않게)
+      new THREE.MeshStandardMaterial({ color: '#8fcbe8', roughness: 0.35 }), // 옆면·구멍 벽
+    ]);
     this.board.receiveShadow = true;
-    this.board.position.y = -0.5;
     s.add(this.board);
 
     // 다음 턴에 녹을 영역 미리보기
@@ -115,8 +112,6 @@ export class GameScene {
     this.ghostZone.visible = false;
     s.add(this.ghostZone);
 
-    this.holeGroup = new THREE.Group(); // 지구 온난화로 뚫린 구멍들
-    s.add(this.holeGroup);
     this.crackGroup = new THREE.Group();
     s.add(this.crackGroup);
     this.myCrackMarker = makeCrack('#c9b8ff', 0.9);
@@ -167,8 +162,13 @@ export class GameScene {
 
   applyBoardScale() {
     const r = this.displayRadius;
-    this.board.scale.set(r, 1, r);
     this.ghostZone.scale.set(r, r, 1);
+    // 반지름이나 구멍이 바뀌었을 때만 판 모양을 다시 만듦 (녹는 연출 중에는 프레임마다 조금씩)
+    const key = `${r.toFixed(2)}|${this.holeList.length}`;
+    if (key === this.boardKey) return;
+    this.boardKey = key;
+    this.board.geometry.dispose();
+    this.board.geometry = buildBoardGeometry(r, this.holeList);
   }
 
   setMeltPreview(nextRadius) {
@@ -257,9 +257,9 @@ export class GameScene {
 
   // 서버가 보낸 구멍 목록과 맞춤 (이미 있는 건 그대로)
   setHoles(holes = []) {
-    if (this.holeGroup.children.length === holes.length) return;
-    this.holeGroup.clear();
-    for (const h of holes) this.holeGroup.add(makeHole(h));
+    if (this.holeList.length === holes.length) return;
+    this.holeList = holes.map((h) => ({ ...h }));
+    this.applyBoardScale();
   }
 
   // 게임에서 나갈 때: 재생 중단 + 말·상자·구멍·효과 전부 정리
@@ -277,7 +277,8 @@ export class GameScene {
   }
 
   resetRound() {
-    this.holeGroup.clear();
+    this.holeList = [];
+    this.applyBoardScale();
     for (const [id, e] of this.pieces) {
       if (e.clone) this.removePiece(id);
       else e.faced = false;
@@ -421,13 +422,11 @@ export class GameScene {
       const h = pb.res.warming;
       if (!pb.holeOpened && pb.t >= 0.7) {
         pb.holeOpened = true;
-        pb.hole = makeHole(h);
-        pb.hole.scale.setScalar(0.01);
-        this.holeGroup.add(pb.hole);
+        this.holeList.push({ ...h }); // 판에 실제로 구멍을 뚫음
+        this.applyBoardScale();
         this.spawnHoleBurst(h);
         this.shake = 0.6;
       }
-      if (pb.hole) pb.hole.scale.setScalar(Math.min(1, pb.hole.scale.x + dt * 4));
       if (pb.t >= CONFIG.warmingSec) {
         pb.stage = 'intro';
         pb.t = 0;
@@ -760,36 +759,53 @@ export class GameScene {
 }
 
 // ───────── 모델/텍스처 ─────────
-// 얼음에 뚫린 구멍: 어두운 물 + 들쭉날쭉한 가장자리
-function makeHole(h) {
-  const g = new THREE.Group();
-  g.position.set(h.x, 0, h.y);
-  g.userData.r = h.r;
+// 깨진 구멍 윤곽: 들쭉날쭉하게. 같은 구멍은 다시 그려도 같은 모양 (위치로 시드)
+function holeOutline(h) {
+  let seed = (Math.round(h.x * 100) * 73856093) ^ (Math.round(h.y * 100) * 19349663);
+  const rnd = () => ((seed = (Math.imul(seed, 1103515245) + 12345) | 0) >>> 0) / 4294967296;
+  const n = Math.max(14, Math.round(h.r * 9));
   const pts = [];
-  const n = 28;
   for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2;
-    const rr = h.r * (0.9 + Math.random() * 0.2);
-    pts.push(new THREE.Vector2(Math.cos(a) * rr, Math.sin(a) * rr));
+    const a = (i / n) * Math.PI * 2 + (rnd() - 0.5) * 0.25;
+    const rr = h.r * (0.9 + rnd() * 0.2);
+    pts.push(new THREE.Vector2(h.x + Math.cos(a) * rr, h.y + Math.sin(a) * rr));
   }
-  const water = new THREE.Mesh(
-    new THREE.ShapeGeometry(new THREE.Shape(pts)),
-    new THREE.MeshBasicMaterial({ color: '#05253f', side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }),
-  );
-  water.rotation.x = Math.PI / 2;
-  water.position.y = 0.02;
-  const inner = new THREE.Mesh(
-    new THREE.CircleGeometry(h.r * 0.55, 24),
-    new THREE.MeshBasicMaterial({ color: '#0b3d63', transparent: true, opacity: 0.7, polygonOffset: true, polygonOffsetFactor: -3 }),
-  );
-  inner.rotation.x = -Math.PI / 2;
-  inner.position.y = 0.025;
-  const rim = new THREE.LineLoop(
-    new THREE.BufferGeometry().setFromPoints(pts.map((p) => new THREE.Vector3(p.x, 0.04, p.y))),
-    new THREE.LineBasicMaterial({ color: '#ffffff' }),
-  );
-  g.add(water, inner, rim);
-  return g;
+  return pts;
+}
+
+// 판 모양 = 반지름 R 원에서 구멍을 뺀 것. 위쪽 y=0, 두께 1
+function buildBoardGeometry(R, holes) {
+  const SEG = 180;
+  // 판 안에 완전히 들어간 구멍은 진짜 구멍으로, 가장자리에 걸친 구멍(판이 녹아서)은 가장자리를 파낸 홈으로
+  const inside = holes.filter((h) => Math.hypot(h.x, h.y) + h.r * 1.12 < R - 0.05);
+  const edge = holes.filter((h) => !inside.includes(h) && Math.hypot(h.x, h.y) - h.r < R);
+  const outer = [];
+  for (let i = 0; i < SEG; i++) {
+    const a = (i / SEG) * Math.PI * 2;
+    const dx = Math.cos(a);
+    const dy = Math.sin(a);
+    let rho = R;
+    for (const h of edge) {
+      // 이 방향 반직선이 구멍에 닿으면 구멍 시작점에서 판을 끊음 (가장자리에 홈이 파임)
+      const bq = dx * h.x + dy * h.y;
+      const disc = bq * bq - (h.x * h.x + h.y * h.y - h.r * h.r);
+      if (disc <= 0) continue;
+      const t1 = bq - Math.sqrt(disc);
+      const t2 = bq + Math.sqrt(disc);
+      if (t2 > 0 && t1 < rho) rho = Math.max(0.2, t1);
+    }
+    outer.push(new THREE.Vector2(dx * rho, dy * rho));
+  }
+  const shape = new THREE.Shape(outer);
+  for (const h of inside) shape.holes.push(new THREE.Path(holeOutline(h)));
+  const geo = new THREE.ExtrudeGeometry(shape, { depth: 1, bevelEnabled: false, curveSegments: 1, steps: 1 });
+  geo.rotateX(Math.PI / 2); // 모양 (x, y) → 월드 (x, 0, y), 두께는 아래(-y)로
+  // 얼음 텍스처를 판 전체에 한 장으로 (중심이 밝은 원형 그라디언트)
+  const pos = geo.attributes.position;
+  const uv = geo.attributes.uv;
+  for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / (2 * R) + 0.5, pos.getZ(i) / (2 * R) + 0.5);
+  geo.computeVertexNormals();
+  return geo;
 }
 
 function makePenguin(color, { ghost = false } = {}) {

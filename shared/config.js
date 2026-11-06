@@ -34,8 +34,8 @@ export const CONFIG = {
 
   // 지구 온난화 이벤트: 모두 조준을 마친 뒤 출발 직전에 무작위 위치에 구멍. 판이 끝날 때까지 남음
   warmingChance: 0.1, // 턴마다 확률
-  holeRadiusMin: 2, // 구멍 반지름은 이 범위에서 무작위 (판 크기와 무관)
-  holeRadiusMax: 7,
+  holeRadiusMin: 1.5, // 구멍 반지름은 이 범위에서 무작위 (판 크기와 무관). 펭귄 반지름 = 1
+  holeRadiusMax: 4,
   warmingSec: 1.8, // 안내 문구 + 얼음 깨지는 연출 시간
 
   launchIntroSec: 0.5, // 출발 순간 카메라가 위로 빠지는 시간

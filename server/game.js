@@ -354,7 +354,8 @@ export class Game {
   spawnHole() {
     const r = this.round;
     const hr = randomHoleRadius(this.random, r.radius);
-    const maxD = Math.max(0, r.radius - hr);
+    // 깨진 윤곽(최대 1.1배)까지 판 안에 들어오게 여유를 둠 → 화면에서도 온전한 구멍으로 보임
+    const maxD = Math.max(0, r.radius - hr * 1.15 - 0.1);
     const a = this.random() * Math.PI * 2;
     const d = Math.sqrt(this.random()) * maxD;
     return { x: round2(Math.cos(a) * d), y: round2(Math.sin(a) * d), r: round2(hr) };
