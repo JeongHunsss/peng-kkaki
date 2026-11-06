@@ -22,7 +22,8 @@ export class Lobby {
       this.users.set(token, user);
       this.byId.set(user.id, user);
     }
-    if (user.ws && user.ws !== ws) user.ws.close();
+    // 같은 접속 정보로 다른 창이 들어오면 기존 창은 '교체됨'(4000)으로 끊음 → 기존 창은 재접속하지 않음
+    if (user.ws && user.ws !== ws) user.ws.close(4000, 'replaced');
     user.ws = ws;
     user.name = cleanName(name) || user.name || `펭귄${Math.floor(Math.random() * 900 + 100)}`;
     clearTimeout(user.leaveTimer);

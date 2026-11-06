@@ -7,7 +7,8 @@ const BASE_PATH = location.pathname.replace(/[^/]*$/, '');
 const $$ = (s) => [...document.querySelectorAll(s)];
 
 // ───────── 상태 ─────────
-const me = { id: null, token: localStorage.getItem('pk_token') || '', name: localStorage.getItem('pk_name') || '' };
+// 접속 정보(token)는 탭마다 따로(sessionStorage): 같은 브라우저 탭끼리 서로 끊어내는 문제 방지. 새로고침해도 유지됨
+const me = { id: null, token: sessionStorage.getItem('pk_token') || '', name: localStorage.getItem('pk_name') || '' };
 let ws = null;
 let room = null;
 let game = null; // { players(meta), state, duel, startRadius }
@@ -30,11 +31,30 @@ function connect() {
   ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${BASE_PATH}`);
   ws.onopen = () => send({ t: 'hello', name: me.name, token: me.token });
   ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
-  ws.onclose = () => {
+  ws.onclose = (ev) => {
+    if (ev.code === 4000) {
+      // 다른 창(탭 복제 등)이 이 접속을 이어받음 → 서로 끊어내는 무한 반복을 막기 위해 재접속하지 않음
+      showReplaced();
+      return;
+    }
     toast('서버 연결이 끊겼어요. 다시 연결 중…');
     setTimeout(connect, 1500);
   };
 }
+function showReplaced() {
+  for (const s of ['menu', 'room', 'game']) $(`#screen-${s}`).classList.add('hidden');
+  const box = document.createElement('div');
+  box.className = 'screen card-screen';
+  box.innerHTML = `<div class="card center"><h2>다른 창에서 접속했어요</h2>
+    <p class="muted">같은 접속이 다른 창(탭)으로 옮겨가서 이 창은 연결을 끊었어요.</p>
+    <button class="btn primary" id="btn-reconnect-here">이 창에서 새로 접속</button></div>`;
+  document.body.append(box);
+  box.querySelector('#btn-reconnect-here').onclick = () => {
+    sessionStorage.removeItem('pk_token'); // 새 플레이어로 접속
+    location.reload();
+  };
+}
+
 const send = (m) => ws?.readyState === 1 && ws.send(JSON.stringify(m));
 
 function onMessage(m) {
@@ -48,7 +68,7 @@ function onMessage(m) {
       me.id = m.id;
       me.token = m.token;
       me.name = m.name;
-      localStorage.setItem('pk_token', m.token);
+      sessionStorage.setItem('pk_token', m.token);
       localStorage.setItem('pk_name', m.name);
       $('#name-input').value = m.name;
       break;
