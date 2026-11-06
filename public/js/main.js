@@ -75,6 +75,7 @@ function onMessage(m) {
     case 'menu':
       room = null;
       game = null;
+      resetGameUi();
       show('menu');
       if (pendingRoomJoin) {
         send({ t: 'joinRoom', code: pendingRoomJoin });
@@ -554,7 +555,9 @@ function showMatchEnd(m) {
   matchResultOpen = true;
   overlay(`<div class="card center"><h2>🏆 최종 결과</h2>
     <table class="result-table">${rows}</table>
-    <button class="btn primary" id="btn-after-match">대기실로</button></div>`);
+    <div class="row"><button class="btn" id="btn-match-exit">메뉴로 나가기</button>
+    <button class="btn primary" id="btn-after-match">대기실로</button></div></div>`);
+  $('#btn-match-exit').onclick = () => send({ t: 'leaveRoom' });
   $('#btn-after-match').onclick = () => {
     matchResultOpen = false;
     $('#overlay').classList.add('hidden');
@@ -562,6 +565,25 @@ function showMatchEnd(m) {
     else show('menu');
   };
 }
+
+// 메뉴로 돌아갈 때 게임 화면 상태를 전부 초기화
+function resetGameUi() {
+  queued.length = 0;
+  matchResultOpen = false;
+  lastRound = 0;
+  lastTurn = 0;
+  $('#overlay').classList.add('hidden');
+  $('#banner').classList.remove('show');
+  scene.clearAll();
+}
+
+function exitGame() {
+  const s = game?.state;
+  const playing = s && s.players.some((p) => p.id === me.id) && !matchResultOpen;
+  if (playing && !confirm('게임에서 나갈까요?\n이번 매치에서 빠지고, 남은 사람들은 계속 진행해요.')) return;
+  send({ t: 'leaveRoom' }); // 서버가 방에서 빼고 메뉴로 보내줌
+}
+$('#btn-exit').onclick = exitGame;
 
 function overlay(html) {
   const o = $('#overlay');

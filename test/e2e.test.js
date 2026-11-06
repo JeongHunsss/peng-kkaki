@@ -212,3 +212,49 @@ test('방 목록: 메뉴에 있는 사람에게 방이 실시간으로 보이고
     srv.kill();
   }
 });
+
+test('게임 중 나가기: 나간 사람은 메뉴로, 남은 사람은 계속 진행', { timeout: 40000 }, async () => {
+  const srv = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, PORT: String(PORT + 4), AIM_TIME_MS: '3000' }, stdio: 'pipe' });
+  await new Promise((r) => srv.stdout.once('data', r));
+  try {
+    const a = await client2(PORT + 4, 'A');
+    const b = await client2(PORT + 4, 'B');
+    a.send({ t: 'createRoom' });
+    const room = await a.until((m) => m.t === 'room');
+    b.send({ t: 'joinRoom', code: room.code });
+    a.send({ t: 'addBot' });
+    await a.until((m) => m.t === 'room' && m.members.length === 3);
+    a.send({ t: 'start' });
+    await b.until((m) => m.t === 'state' && m.phase === 'aim');
+    b.send({ t: 'leaveRoom' });
+    await b.until((m) => m.t === 'menu');
+    const st = await a.until((m) => m.t === 'state' && m.players.find((p) => p.name === 'B')?.connected === false);
+    assert.equal(st.players.length, 3, '나간 사람 말은 판에 남고 제자리 처리');
+    a.send({ t: 'aim', angle: 0, power: 0.2 });
+    await a.until((m) => m.t === 'turnResult'); // B를 기다리지 않고 진행
+    const bAfter = b.inbox.length;
+    await new Promise((r) => setTimeout(r, 4000));
+    assert.equal(b.inbox.slice(bAfter).some((m) => m.t === 'state' || m.t === 'turnResult'), false, '나간 사람에겐 게임 메시지가 안 감');
+    a.ws.close();
+    b.ws.close();
+  } finally {
+    srv.kill();
+  }
+});
+
+async function client2(port, name) {
+  const ws = new WebSocket(`ws://localhost:${port}`);
+  const inbox = [];
+  ws.on('message', (raw) => inbox.push(JSON.parse(raw)));
+  await new Promise((r) => ws.on('open', r));
+  ws.send(JSON.stringify({ t: 'hello', name }));
+  const until = async (pred) => {
+    for (let i = 0; i < 300; i++) {
+      const m = inbox.findLast(pred);
+      if (m) return m;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error(`${name} timeout`);
+  };
+  return { ws, inbox, until, send: (m) => ws.send(JSON.stringify(m)) };
+}
