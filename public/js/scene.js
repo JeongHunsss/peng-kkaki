@@ -1,6 +1,6 @@
 // 3D 렌더링. 물리는 바닥 평면 2D(x, y) → 월드 (x, 0, y)로 매핑하고, 떨어지는 건 연출만 한다.
 import * as THREE from 'three';
-import { CONFIG, slowmoWindows } from '/shared/config.js';
+import { CONFIG, slowmoWindows } from '../shared/config.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const ARROW_LEN = 6; // 조준 화살표 길이 (세기와 무관하게 고정)
