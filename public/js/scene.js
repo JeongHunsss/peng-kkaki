@@ -262,6 +262,20 @@ export class GameScene {
     for (const h of holes) this.holeGroup.add(makeHole(h));
   }
 
+  // 게임에서 나갈 때: 재생 중단 + 말·상자·구멍·효과 전부 정리
+  clearAll() {
+    this.playback = null;
+    for (const [id] of this.pieces) this.removePiece(id);
+    this.resetRound();
+    for (const f of this.fx) this.scene.remove(f.obj);
+    this.fx = [];
+    this.setAim('main', null);
+    this.setAim('clone', null);
+    this.setClonePreview(null);
+    this.setMeltPreview(null);
+    this.setGhostZone(false);
+  }
+
   resetRound() {
     this.holeGroup.clear();
     for (const [id, e] of this.pieces) {
