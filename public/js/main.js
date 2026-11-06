@@ -1,7 +1,9 @@
-import { CONFIG, ITEMS, QUICK_CHATS, clonePosition, startBoardRadius } from '/shared/config.js';
+import { CONFIG, ITEMS, QUICK_CHATS, clonePosition, startBoardRadius } from '../shared/config.js';
 import { GameScene } from './scene.js';
 
 const $ = (s) => document.querySelector(s);
+// 게임이 올라간 경로 (예: '/' 또는 '/pengkkaki/'). nginx 하위 경로 배포 지원
+const BASE_PATH = location.pathname.replace(/[^/]*$/, '');
 const $$ = (s) => [...document.querySelectorAll(s)];
 
 // ───────── 상태 ─────────
@@ -25,7 +27,7 @@ function newAim() {
 
 // ───────── 네트워크 ─────────
 function connect() {
-  ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`);
+  ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${BASE_PATH}`);
   ws.onopen = () => send({ t: 'hello', name: me.name, token: me.token });
   ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
   ws.onclose = () => {
@@ -57,7 +59,7 @@ function onMessage(m) {
       if (pendingRoomJoin) {
         send({ t: 'joinRoom', code: pendingRoomJoin });
         pendingRoomJoin = null;
-        history.replaceState(null, '', '/');
+        history.replaceState(null, '', BASE_PATH);
       }
       break;
     case 'roomList':
@@ -180,7 +182,7 @@ function renderRoomList(rooms) {
 $('#btn-leave-room').onclick = () => send({ t: 'leaveRoom' });
 $('#btn-start').onclick = () => send({ t: 'start' });
 $('#btn-copy-link').onclick = async () => {
-  const link = `${location.origin}/?room=${room.code}`;
+  const link = `${location.origin}${BASE_PATH}?room=${room.code}`;
   try {
     await navigator.clipboard.writeText(link);
     toast('초대 링크를 복사했어요.');
