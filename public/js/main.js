@@ -20,6 +20,8 @@ let scene = null;
 let deadline = 0;
 let lastRound = 0;
 let lastTurn = 0;
+let myCrackPlaced = false; // 유령: 이번 턴에 균열을 놓았는지
+let wasAlive = false; // 유령이 된 순간을 알기 위해
 let matchResultOpen = false; // 최종 결과창을 닫기 전까지 화면 유지
 
 function newAim() {
@@ -113,6 +115,8 @@ function onMessage(m) {
       break;
     case 'crackOk':
       scene.setMyCrack({ x: m.x, y: m.y });
+      myCrackPlaced = true;
+      updateAimUi();
       break;
     case 'turnResult':
       playTurn(m);
@@ -259,6 +263,12 @@ function applyState(s) {
   scene.setHoles(s.holes);
   scene.setBoard(s.radius, s.phase === 'aim' ? s.nextRadius : null);
   const mine = myPlayer();
+  myCrackPlaced = !!s.myCrack;
+  if (mine && wasAlive && !mine.alive) {
+    banner('👻 유령이 되었어요!<br><small>판 가장자리에 균열을 놓아 산 사람을 방해할 수 있어요</small>', 3200);
+    sysChat('👻 유령이 되었어요. 조준 단계마다 보라색 가장자리를 눌러 균열을 놓을 수 있어요. 균열 위에 멈춘 펭귄은 다음 턴 세기가 최대 50%가 돼요.');
+  }
+  wasAlive = !!mine?.alive;
   if (s.phase === 'aim' && s.turn !== lastTurn) {
     lastTurn = s.turn;
     Object.assign(aim, newAim());
@@ -294,8 +304,16 @@ function updateAimUi() {
   scene.setMode(mine?.alive && s?.phase === 'aim' && !scene.playback ? 'aim' : 'overview');
   scene.setGhostZone(ghost);
   $('#ghost-hint').classList.toggle('hidden', !ghost);
-  if (!mine || !mine.alive) $('#ghost-hint').textContent = mine ? '👻 유령 — 판 가장자리(바깥 30%)를 눌러 균열을 놓으세요' : '👀 관전 중';
-  $('#ghost-hint').classList.toggle('hidden', !(ghost || (!mine && s)));
+  const hint = $('#ghost-hint');
+  if (!mine && s) hint.innerHTML = '👀 관전 중';
+  else if (ghost && myCrackPlaced) {
+    hint.innerHTML = '✔ <b>균열을 놓았어요</b> — 발사 때 모두에게 공개돼요<span class="sub">다른 곳을 누르면 위치를 옮길 수 있어요</span>';
+  } else if (ghost) {
+    hint.innerHTML = '👻 <b>유령도 판에 영향을 줄 수 있어요!</b> 보라색 가장자리를 눌러 균열을 놓으세요'
+      + '<span class="sub">균열 위에 멈춘 펭귄은 다음 턴 세기가 최대 50%로 제한돼요 (턴마다 1개)</span>';
+  }
+  hint.classList.toggle('done', ghost && myCrackPlaced);
+  hint.classList.toggle('hidden', !(ghost || (!mine && s)));
   $('#aim-panel').classList.toggle('hidden', !(mine?.alive && s?.phase === 'aim' && !scene.playback));
   $('#aim-pad').classList.toggle('hidden', !aiming);
 
@@ -519,11 +537,18 @@ function playTurn(res) {
     sysChat('🌍 지구 온난화! 얼음에 구멍이 뚫렸어요.');
     setTimeout(launchBanner, CONFIG.warmingSec * 1000);
   } else launchBanner();
+  if (res.cracks.length) {
+    sysChat(`👻 유령 균열 ${res.cracks.length}개 공개! 위에 멈추면 다음 턴 세기가 최대 50%가 돼요.`);
+  }
   scene.playTurn(res, () => {
+    for (const h of res.crackHits ?? []) {
+      sysChat(`🧊 ${names[h.victim]}이(가) ${names[h.ghost] ?? '유령'}의 균열에 걸렸어요 — 다음 턴 세기 최대 50%`);
+      if (h.ghost === me.id) toast(`👻 내 균열에 ${names[h.victim]}이(가) 걸렸어요!`);
+    }
     const falls = res.falls.filter((f) => !f.id.includes('#')).map((f) => f.id);
     for (const id of [...falls, ...res.meltOut]) sysChat(`${names[id]} 탈락!`);
     for (const p of res.pickups) if (p.id === me.id && p.gained) toast('아이템을 획득했어요! 다음 턴부터 쓸 수 있어요.');
-    if (res.capped.includes(me.id)) toast('균열 위에 멈췄어요. 다음 턴 세기 최대 50%!');
+    if (res.capped.includes(me.id)) toast('🧊 유령 균열 위에 멈췄어요. 다음 턴 세기 최대 50%!');
     flushQueue();
     updateAimUi();
   });

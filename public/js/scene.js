@@ -115,6 +115,9 @@ export class GameScene {
     this.crackGroup = new THREE.Group();
     s.add(this.crackGroup);
     this.myCrackMarker = makeCrack('#c9b8ff', 0.9);
+    const myLabel = makeTextSprite(['내 균열', '발사 때 모두에게 공개'], '#e9ddff');
+    myLabel.position.set(0, 2.2, 0);
+    this.myCrackMarker.add(myLabel);
     this.myCrackMarker.visible = false;
     s.add(this.myCrackMarker);
 
@@ -192,11 +195,15 @@ export class GameScene {
     if (c) this.myCrackMarker.position.set(c.x, 0.04, c.y);
   }
 
+  // 공개된 유령 균열 + 위에 뜨는 설명 (산 사람도 뭔지 알 수 있게)
   setCracks(cracks) {
     this.crackGroup.clear();
     for (const c of cracks) {
-      const m = makeCrack('#1b3550', 1);
+      const m = makeCrack('#3b2a6b', 1);
       m.position.set(c.x, 0.035, c.y);
+      const label = makeTextSprite(['👻 유령 균열', '멈추면 다음 턴 세기 50%'], '#e9ddff');
+      label.position.set(0, 2.2, 0);
+      m.add(label);
       this.crackGroup.add(m);
     }
   }
@@ -559,6 +566,7 @@ export class GameScene {
     this.applyBoardScale();
     this.setBoxes(pb.res.boxes);
     this.setHoles(pb.res.holes);
+    this.crackGroup.clear(); // 균열은 이번 발사에만 효과 → 다음 조준 때는 지움 (걸린 사람은 🧊로 표시)
     pb.onDone?.();
   }
 
@@ -941,6 +949,32 @@ function jaggedRing(r, n, jitter) {
     pts.push(new THREE.Vector3(Math.cos(a) * rr, 0, Math.sin(a) * rr));
   }
   return new THREE.BufferGeometry().setFromPoints(pts);
+}
+
+// 카메라를 항상 바라보는 글자 표지판
+function makeTextSprite(lines, color) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 64 * lines.length + 16;
+  const x = c.getContext('2d');
+  x.fillStyle = 'rgba(20, 10, 45, 0.78)';
+  x.beginPath();
+  x.roundRect(4, 4, c.width - 8, c.height - 8, 24);
+  x.fill();
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  lines.forEach((t, i) => {
+    x.font = i === 0 ? 'bold 40px sans-serif' : '32px sans-serif';
+    x.fillStyle = i === 0 ? color : '#ffffff';
+    x.fillText(t, c.width / 2, 40 + i * 64);
+  });
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  // 거리와 상관없이 화면에서 같은 크기로 보이게 (큰 판을 멀리서 봐도 읽힘)
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, sizeAttenuation: false }));
+  sp.renderOrder = 20;
+  sp.scale.set(0.26, (0.26 * c.height) / c.width, 1);
+  return sp;
 }
 
 function makeCrack(color, opacity) {
