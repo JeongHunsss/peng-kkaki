@@ -4,7 +4,8 @@
 export const CONFIG = {
   pieceRadius: 1,
   boardRadiusBase: 8,
-  boardRadiusPerPlayer: 2, // 2명 12, 10명 28, 30명 68
+  boardRadiusPerPlayer: 2, // 10명 이하는 모두 28, 20명 48, 30명 68
+  boardMinPlayers: 10, // 인원이 적어도 판은 이 인원 기준 크기로
   spawnRadiusRatio: 0.6,
 
   // 세기 100% 마찰만으로 미끄러지는 거리. 규칙서(8칸)보다 훨씬 세게 조정됨 → 2인 판에선 혼자서도 끝까지 날아감
@@ -70,7 +71,8 @@ export const PLAYER_COLORS = [
   '#caffbf', '#ff595e', '#1982c4', '#ffca3a', '#6a4c93', '#f4a261',
 ]; // 최대 인원(30)만큼
 
-export const startBoardRadius = (n) => CONFIG.boardRadiusBase + CONFIG.boardRadiusPerPlayer * n;
+export const startBoardRadius = (n) =>
+  CONFIG.boardRadiusBase + CONFIG.boardRadiusPerPlayer * Math.max(n, CONFIG.boardMinPlayers);
 
 // 세기(0~1) → 초속. 감속이 일정하므로 v0 = sqrt(2·a·d).
 export const maxSpeed = () => Math.sqrt(2 * CONFIG.friction * CONFIG.maxSlideDistance);

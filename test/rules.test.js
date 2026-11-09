@@ -6,9 +6,11 @@ import { Game } from '../server/game.js';
 
 const body = (id, x, y, vx = 0, vy = 0, extra = {}) => ({ id, x, y, vx, vy, r: 1, m: 1, real: true, ...extra });
 
-test('판 시작 반지름 = 8 + 2 × 인원수', () => {
-  assert.equal(startBoardRadius(2), 12);
+test('판 시작 반지름 = 8 + 2 × max(인원수, 10)', () => {
+  assert.equal(startBoardRadius(2), 28, '10명보다 적어도 10명 크기');
+  assert.equal(startBoardRadius(4), 28);
   assert.equal(startBoardRadius(10), 28);
+  assert.equal(startBoardRadius(11), 30);
   assert.equal(startBoardRadius(30), 68);
 });
 
@@ -20,12 +22,12 @@ test('세기 100%면 약 30칸 미끄러짐, 세기 2배는 약 60칸', () => {
   assert.equal(slideDistance(1, 2), 60);
 });
 
-test('세기 40%면 2인 판 중심을 지나 판 안에 멈춤 (최대 세기는 혼자서도 끝까지 감)', () => {
+test('2인 판(반지름 28): 시작 위치에서 혼자 최대 세기로는 반대편 밖까지 못 감, 세기 2배면 감', () => {
   const R = startBoardRadius(2);
-  const weak = simulate([body('a', -R * 0.6, 0, maxSpeed() * 0.4, 0)], { boardRadius: R });
-  assert.equal(weak.falls.length, 0);
   const full = simulate([body('a', -R * 0.6, 0, maxSpeed(), 0)], { boardRadius: R });
-  assert.equal(full.falls.length, 1);
+  assert.equal(full.falls.length, 0);
+  const double = simulate([body('a', -R * 0.6, 0, maxSpeed() * Math.SQRT2, 0)], { boardRadius: R });
+  assert.equal(double.falls.length, 1);
 });
 
 test('정면 충돌: 반발계수 0.9로 운동량 전달', () => {

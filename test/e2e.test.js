@@ -50,7 +50,7 @@ test('친구 방: 생성 → 참가 → 시작 → 발사 → 채팅 채널', { 
 
     const st = await a.wait((m) => m.t === 'state' && m.phase === 'aim');
     assert.equal(st.players.length, 3);
-    assert.equal(st.radius, 14); // 8 + 2 × 3
+    assert.equal(st.radius, 28); // 3명이어도 10명 크기: 8 + 2 × 10
     const meA = st.players.find((p) => p.name === 'A');
     const meB = st.players.find((p) => p.name === 'B');
 
@@ -120,7 +120,7 @@ test('혼자 연습: 봇 3명이 알아서 조준하고 판이 진행됨', { tim
     };
     const st = await until((m) => m.t === 'state' && m.phase === 'aim');
     assert.equal(st.players.length, 4);
-    assert.equal(st.radius, 16); // 8 + 2 × 4
+    assert.equal(st.radius, 28); // 4명이어도 10명 크기
     // 봇들은 사람 입력 없이도 확정함
     await until((m) => m.t === 'state' && m.players.filter((p) => p.name.startsWith('봇') && p.confirmed).length === 3);
     ws.send(JSON.stringify({ t: 'aim', angle: 0, power: 0.3 }));
