@@ -9,7 +9,7 @@ import { CONFIG } from '../shared/config.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT) || 3000;
-const HOST = process.env.HOST || '0.0.0.0';
+const HOST = process.env.HOST || undefined; // 기본: IPv4·IPv6 모두에서 받음
 // 테스트용: 조준 제한시간 덮어쓰기 (예: AIM_TIME_MS=60000)
 if (Number(process.env.AIM_TIME_MS) > 0) CONFIG.aimTimeMs = Number(process.env.AIM_TIME_MS);
 // 테스트용: 지구 온난화 확률 덮어쓰기 (예: WARMING_CHANCE=1 이면 매 턴)
