@@ -133,6 +133,7 @@ test('균열 위에 멈춘 말은 다음 턴 세기 50% 제한', () => {
   const tr = sent.find((m) => m.t === 'turnResult');
   assert.deepEqual(tr.capped, [a]);
   assert.equal(g.round.pieces[a].capped, true);
+  assert.deepEqual(tr.crackHits, [{ ghost: c, victim: a }], '누구 균열에 누가 걸렸는지');
   g.stop();
 });
 

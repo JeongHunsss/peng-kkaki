@@ -266,14 +266,17 @@ export class Game {
     for (const b of restore) Object.assign(r.pieces[b.id], { x: b.x, y: b.y });
 
     // 균열 효과: 이번 턴 제한은 해제하고, 균열 위에서 멈춘 말에 다음 턴 제한
-    const crackList = dedupeCracks(Object.values(r.cracks));
+    const crackList = dedupeCracks(Object.entries(r.cracks).map(([owner, c]) => ({ ...c, owner })));
     for (const id of Object.keys(r.pieces)) r.pieces[id].capped = false;
     const capped = [];
+    const crackHits = []; // {ghost: 균열 놓은 유령, victim: 걸린 사람}
     for (const id of this.aliveIds()) {
       const pc = r.pieces[id];
-      if (crackList.some((c) => Math.hypot(c.x - pc.x, c.y - pc.y) < CONFIG.crackRadius)) {
+      const hit = crackList.find((c) => Math.hypot(c.x - pc.x, c.y - pc.y) < CONFIG.crackRadius);
+      if (hit) {
         pc.capped = true;
         capped.push(id);
+        crackHits.push({ ghost: hit.owner, victim: id });
       }
     }
 
@@ -333,6 +336,7 @@ export class Game {
       revealed,
       cracks: crackList,
       capped,
+      crackHits,
       meltOut,
       oldRadius,
       newRadius: r.radius,
