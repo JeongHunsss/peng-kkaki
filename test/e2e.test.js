@@ -258,3 +258,33 @@ async function client2(port, name) {
   };
   return { ws, inbox, until, send: (m) => ws.send(JSON.stringify(m)) };
 }
+
+test('유령(탈락자) 채팅도 산 사람에게 보이고 👻 표시용 channel=ghost', { timeout: 30000 }, async () => {
+  const srv = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, PORT: String(PORT + 5), AIM_TIME_MS: '60000' }, stdio: 'pipe' });
+  await new Promise((r) => srv.stdout.once('data', r));
+  try {
+    const a = await client2(PORT + 5, 'A');
+    const b = await client2(PORT + 5, 'B');
+    a.send({ t: 'createRoom' });
+    const room = await a.until((m) => m.t === 'room');
+    b.send({ t: 'joinRoom', code: room.code });
+    await a.until((m) => m.t === 'room' && m.members.length === 2);
+    a.send({ t: 'addBot' });
+    await a.until((m) => m.t === 'room' && m.members.length === 3);
+    a.send({ t: 'start' });
+    const st = await b.until((m) => m.t === 'state' && m.phase === 'aim');
+    const pb = st.players.find((p) => p.name === 'B');
+    // B가 혼자 바깥으로 세게 날아가 탈락
+    b.send({ t: 'aim', angle: Math.atan2(pb.y, pb.x), power: 1 });
+    a.send({ t: 'aim', angle: 0, power: 0 });
+    await a.until((m) => m.t === 'state' && m.phase === 'aim' && m.turn === 2 && m.players.find((p) => p.name === 'B').alive === false);
+    b.send({ t: 'chat', text: '유령이다' });
+    const msg = await a.until((m) => m.t === 'chat' && m.text === '유령이다');
+    assert.equal(msg.channel, 'ghost');
+    assert.equal(msg.bubble, false);
+    a.ws.close();
+    b.ws.close();
+  } finally {
+    srv.kill();
+  }
+});

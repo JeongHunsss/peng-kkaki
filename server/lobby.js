@@ -385,12 +385,9 @@ export class Lobby {
     const game = room.game;
     const phase = game?.round?.phase;
     const inRound = game && phase !== 'roundEnd';
-    const isGhost = (id) => {
-      if (!game) return false;
-      const pc = game.round.pieces[id];
-      return !pc || !pc.alive; // 관전자도 유령 채널
-    };
-    const ghost = inRound && isGhost(user.id);
+    // 탈락자·관전자 채팅은 'ghost'로 표시(👻)만 하고, 산 사람·죽은 사람 모두에게 보냄
+    const pc = game?.round.pieces[user.id];
+    const ghost = !!inRound && (!pc || !pc.alive);
     const out = {
       t: 'chat',
       from: user.id,
@@ -398,9 +395,9 @@ export class Lobby {
       text,
       quick,
       channel: ghost ? 'ghost' : 'all',
-      bubble: !ghost && inRound ? phase !== 'launch' : !ghost,
+      bubble: !ghost && inRound ? phase !== 'launch' : !ghost, // 유령은 판 위에 말이 없으니 말풍선 없음
     };
-    this.roomBroadcast(room, out, ghost ? (id) => isGhost(id) : undefined);
+    this.roomBroadcast(room, out);
   }
 
   report(user, target, reason) {
