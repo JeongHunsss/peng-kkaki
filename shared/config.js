@@ -29,7 +29,6 @@ export const CONFIG = {
 
   cloneOffset: 2.3,
 
-  ghostCrackZone: 0.3, // 바깥쪽 30% 영역
   crackRadius: 1.2,
   crackPowerCap: 0.5,
 
