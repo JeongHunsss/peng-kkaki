@@ -1,4 +1,4 @@
-import { CONFIG, ITEMS, QUICK_CHATS, clonePosition, startBoardRadius } from '../shared/config.js';
+import { CONFIG, ITEMS, QUICK_CHATS, PROTOCOL, clonePosition, startBoardRadius } from '../shared/config.js';
 import { GameScene } from './scene.js';
 
 const $ = (s) => document.querySelector(s);
@@ -31,12 +31,21 @@ function newAim() {
 // ───────── 네트워크 ─────────
 function connect() {
   ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${BASE_PATH}`);
-  ws.onopen = () => send({ t: 'hello', name: me.name, token: me.token });
+  ws.onopen = () => send({ t: 'hello', name: me.name, token: me.token, proto: PROTOCOL });
   ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
   ws.onclose = (ev) => {
     if (ev.code === 4000) {
       // 다른 창(탭 복제 등)이 이 접속을 이어받음 → 서로 끊어내는 무한 반복을 막기 위해 재접속하지 않음
       showReplaced();
+      return;
+    }
+    if (ev.code === 4003) {
+      toast('이 주소에서는 접속할 수 없어요. 공식 주소로 열어 주세요.');
+      return; // 서버가 거부한 것이라 다시 시도해도 같음
+    }
+    if (ev.code === 4029) {
+      toast('같은 네트워크에서 접속이 너무 많아요. 잠시 뒤 다시 시도합니다…');
+      setTimeout(connect, 10000);
       return;
     }
     toast('서버 연결이 끊겼어요. 다시 연결 중…');
@@ -73,6 +82,14 @@ function onMessage(m) {
       sessionStorage.setItem('pk_token', m.token);
       localStorage.setItem('pk_name', m.name);
       $('#name-input').value = m.name;
+      break;
+    case 'outdated':
+      // 서버가 새 버전: 한 번만 자동 새로고침, 그래도 같으면(캐시 등) 직접 하라고 안내
+      if (Date.now() - Number(sessionStorage.getItem('pk_reloaded') || 0) > 30_000) {
+        sessionStorage.setItem('pk_reloaded', String(Date.now()));
+        toast('새 버전이 있어요. 새로고침합니다…');
+        setTimeout(() => location.reload(), 800);
+      } else toast('새 버전이 있어요. 새로고침(F5)해 주세요.');
       break;
     case 'menu':
       room = null;

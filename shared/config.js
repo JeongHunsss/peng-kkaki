@@ -1,6 +1,10 @@
 // 테스트하면서 조정하는 값(규칙서 "수치 요약")을 한곳에 모아둔다.
 // 서버와 클라이언트가 같은 파일을 import 한다. 길이 단위는 말 반지름 = 1.
 
+// 서버·클라이언트 메시지 형식 버전. 메시지 모양이 바뀌는 변경을 하면 1 올린다
+// → 배포 전에 열려 있던 탭은 접속할 때 'outdated'를 받고 새로고침한다.
+export const PROTOCOL = 1;
+
 export const CONFIG = {
   pieceRadius: 1,
   boardRadiusBase: 8,

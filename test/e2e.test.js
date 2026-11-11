@@ -288,3 +288,61 @@ test('유령(탈락자) 채팅도 산 사람에게 보이고 👻 표시용 chan
     srv.kill();
   }
 });
+
+test('접속 보호: Origin 검사, IP당 연결 수 제한, 형식 버전 불일치 안내', { timeout: 30000 }, async () => {
+  const port = PORT + 6;
+  const srv = spawn(process.execPath, ['server/index.js'], {
+    env: { ...process.env, PORT: String(port), ALLOWED_ORIGINS: 'https://ok.example', MAX_CONN_PER_IP: '2' },
+    stdio: 'pipe',
+  });
+  await new Promise((r) => srv.stdout.once('data', r));
+  const closeCode = (ws) => new Promise((r) => ws.on('close', (code) => r(code)));
+  try {
+    // 허용되지 않은 Origin → 4003, Origin 없음(브라우저가 아님) → 4003
+    const bad = new WebSocket(`ws://localhost:${port}`, { headers: { origin: 'https://bad.example' } });
+    assert.equal(await closeCode(bad), 4003);
+    const none = new WebSocket(`ws://localhost:${port}`);
+    assert.equal(await closeCode(none), 4003);
+    // 허용된 Origin은 정상. 같은 IP 3번째 접속은 4029
+    const ok1 = new WebSocket(`ws://localhost:${port}`, { headers: { origin: 'https://ok.example' } });
+    const ok2 = new WebSocket(`ws://localhost:${port}`, { headers: { origin: 'https://ok.example' } });
+    await Promise.all([ok1, ok2].map((w) => new Promise((r) => w.on('open', r))));
+    const third = new WebSocket(`ws://localhost:${port}`, { headers: { origin: 'https://ok.example' } });
+    assert.equal(await closeCode(third), 4029);
+    // 옛 형식 버전으로 hello → outdated (접속은 유지되고 welcome도 옴)
+    const inbox = [];
+    ok1.on('message', (raw) => inbox.push(JSON.parse(raw)));
+    ok1.send(JSON.stringify({ t: 'hello', name: '옛탭', proto: -1 }));
+    for (let i = 0; i < 100 && !inbox.some((m) => m.t === 'welcome'); i++) await new Promise((r) => setTimeout(r, 30));
+    assert.ok(inbox.some((m) => m.t === 'outdated'));
+    assert.ok(inbox.some((m) => m.t === 'welcome'));
+    // 하나가 끊기면 자리가 남 → 새 접속 가능
+    ok2.close();
+    await closeCode(ok2);
+    await new Promise((r) => setTimeout(r, 100));
+    const again = new WebSocket(`ws://localhost:${port}`, { headers: { origin: 'https://ok.example' } });
+    await new Promise((r, j) => (again.on('open', r), again.on('close', (c) => j(new Error(`closed ${c}`)))));
+    ok1.close();
+    again.close();
+  } finally {
+    srv.kill();
+  }
+});
+
+test('보안 헤더: CSP(importmap 해시 포함)·nosniff·프레임 금지', { timeout: 20000 }, async () => {
+  const port = PORT + 7;
+  const srv = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, PORT: String(port) }, stdio: 'pipe' });
+  await new Promise((r) => srv.stdout.once('data', r));
+  try {
+    const res = await fetch(`http://localhost:${port}/`);
+    const csp = res.headers.get('content-security-policy');
+    assert.match(csp, /default-src 'self'/);
+    assert.match(csp, /script-src 'self' 'sha256-[A-Za-z0-9+/=]+'/);
+    assert.match(csp, /frame-ancestors 'none'/);
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(res.headers.get('x-frame-options'), 'DENY');
+    assert.equal(res.headers.get('referrer-policy'), 'no-referrer');
+  } finally {
+    srv.kill();
+  }
+});
