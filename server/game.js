@@ -155,7 +155,7 @@ export class Game {
     const x = num(data.x);
     const y = num(data.y);
     const d = Math.hypot(x, y);
-    if (d > r.radius || d < r.radius * (1 - CONFIG.ghostCrackZone)) return;
+    if (d > r.radius) return; // 판 위 어디든
     r.cracks[id] = { x, y };
     this.opts.sendTo(id, { t: 'crackOk', x, y });
   }

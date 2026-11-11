@@ -230,3 +230,16 @@ test('지구 온난화 구멍은 판 안쪽에 생기고 크기는 판과 무관
     g.stop();
   }
 });
+
+test('유령 균열은 판 위 어디든(중앙 포함) 놓을 수 있고, 판 밖은 안 됨', () => {
+  const { g, sent } = makeGame(3);
+  g.start();
+  const [, , c] = Object.keys(g.round.pieces);
+  g.round.pieces[c].alive = false;
+  g.onCrack(c, { x: 0, y: 0 });
+  assert.ok(sent.some((m) => m.to === c && m.t === 'crackOk' && m.x === 0), '중앙 허용');
+  const n = sent.length;
+  g.onCrack(c, { x: g.round.radius + 1, y: 0 });
+  assert.equal(sent.length, n, '판 밖 거부');
+  g.stop();
+});
