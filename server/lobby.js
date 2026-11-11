@@ -312,6 +312,7 @@ export class Lobby {
     const n = clampInt(bots, 1, CONFIG.maxPlayers - 1);
     this.createRoom(user);
     const room = this.rooms.get(user.room);
+    room.practice = true; // 처음 하는 사람 안내용
     for (let i = 0; i < n; i++) this.newBot(room);
     this.startGame(room);
     this.sendRoom(room);
@@ -354,7 +355,7 @@ export class Lobby {
       isConnected: (id) => this.isConnected(room, id),
       onEnd: (standings) => this.endGame(room, standings),
     });
-    this.roomBroadcast(room, { t: 'gameStart', players, settings: room.settings, duel: players.length === 2 });
+    this.roomBroadcast(room, { t: 'gameStart', players, settings: room.settings, duel: players.length === 2, practice: !!room.practice });
     room.game.start();
   }
 

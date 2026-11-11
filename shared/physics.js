@@ -15,6 +15,8 @@ export function simulate(input, { boardRadius, boxes = [], holes = [], friction 
   const maxTicks = Math.round(CONFIG.launchMaxSec * CONFIG.tickRate);
   const frames = [snapshot(bodies)];
   const falls = []; // {id, tick, vx, vy}
+  const hits = []; // {tick, v} 충돌 (효과음용). v = 부딪힐 때 서로 다가가던 속도
+  const MAX_HITS = 200;
   const pickups = []; // {boxId, id, tick}
   const taken = new Set();
   let tick = 0;
@@ -52,7 +54,9 @@ export function simulate(input, { boardRadius, boxes = [], holes = [], friction 
         b.x += b.vx * h;
         b.y += b.vy * h;
       }
-      resolveCollisions(bodies);
+      const tmp = [];
+      resolveCollisions(bodies, tmp);
+      for (const h of tmp) if (hits.length < MAX_HITS) hits.push({ tick, v: Math.round(h.v * 10) / 10 });
       for (const b of bodies) {
         if (!b.fallen && (Math.hypot(b.x, b.y) > boardRadius || inAnyHole(b.x, b.y, holes))) {
           b.fallen = true;
@@ -70,6 +74,7 @@ export function simulate(input, { boardRadius, boxes = [], holes = [], friction 
   return {
     frames,
     falls,
+    hits,
     pickups,
     ticks: tick,
     timedOut,
@@ -82,7 +87,8 @@ function snapshot(bodies) {
 }
 const round = (v) => Math.round(v * 1000) / 1000;
 
-export function resolveCollisions(bodies) {
+/** @param {Array<{v:number}>} [hits] 충돌이 일어날 때마다 {v: 접근 속도}를 넣어 줌 */
+export function resolveCollisions(bodies, hits) {
   const e = CONFIG.restitution;
   for (let i = 0; i < bodies.length; i++) {
     const a = bodies[i];
@@ -110,6 +116,7 @@ export function resolveCollisions(bodies) {
       // 충격량
       const vn = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
       if (vn >= 0) continue;
+      hits?.push({ v: -vn });
       const jImp = (-(1 + e) * vn) / isum;
       a.vx -= jImp * ia * nx;
       a.vy -= jImp * ia * ny;

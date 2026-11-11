@@ -8,13 +8,16 @@ const PITCH_MIN = 0.14; // 약 8°: 거의 수평으로 앞을 봄
 const PITCH_MAX = 1.45; // 약 83°: 거의 바로 위에서 내려다봄
 const toWorld = (x, y, h = 0) => new THREE.Vector3(x, h, y);
 const damp = (rate, dt) => 1 - Math.exp(-rate * dt);
+// 터치 기기(폰·태블릿)는 해상도·그림자·눈 입자를 낮춰 재생 중 프레임을 지킴
+const MOBILE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+const MAX_LABELS = 12; // 펭귄이 이보다 많으면 가까운 순으로 이만큼만 이름을 보여줌 (내 것은 항상)
 
 export class GameScene {
   constructor(canvas, labelsEl) {
     this.canvas = canvas;
     this.labelsEl = labelsEl;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MOBILE ? 1.5 : 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.scene = new THREE.Scene();
@@ -37,6 +40,7 @@ export class GameScene {
     this.playback = null;
     this.clock = new THREE.Clock();
     this.portrait = false;
+    this.onEvent = null; // (name, data) => void — 효과음 등 연출 이벤트 (main.js가 연결)
 
     this.buildWorld();
     this.resize();
@@ -52,7 +56,7 @@ export class GameScene {
     sun.position.set(-20, 40, 15);
     sun.castShadow = true;
     this.sun = sun;
-    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.mapSize.set(MOBILE ? 1024 : 2048, MOBILE ? 1024 : 2048);
     Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40, near: 1, far: 140 });
     s.add(sun);
 
@@ -333,7 +337,10 @@ export class GameScene {
     if (!b) return;
     this.scene.remove(b.mesh);
     this.boxes.delete(id);
-    if (pop) this.spawnSparkle(b.mesh.position.clone());
+    if (pop) {
+      this.spawnSparkle(b.mesh.position.clone());
+      this.onEvent?.('pickup');
+    }
   }
 
   // ───────── 조준 ─────────
@@ -426,6 +433,7 @@ export class GameScene {
       res, bodies, frameDt, simEnd, onDone,
       stage: res.warming ? 'warming' : res.blizzard ? 'blizzard' : 'intro', t: 0, simT: 0,
       holeOpened: false,
+      hitIdx: 0, // 다음에 소리 낼 충돌
       windows: slowmoWindows(res.falls.filter((f) => !f.id.includes('#'))),
       shards: false,
       focus: null,
@@ -444,6 +452,7 @@ export class GameScene {
         this.applyBoardScale();
         this.spawnHoleBurst(h);
         this.shake = 0.6;
+        this.onEvent?.('crack');
       }
       if (pb.t >= CONFIG.warmingSec) {
         pb.stage = pb.res.blizzard ? 'blizzard' : 'intro';
@@ -453,6 +462,7 @@ export class GameScene {
     }
     if (pb.stage === 'blizzard') {
       // 눈보라가 몰아친 뒤 발사 (눈은 재생이 끝날 때까지 계속)
+      if (!this.snowOn) this.onEvent?.('blizzard');
       this.snowOn = true;
       if (pb.t >= CONFIG.blizzardSec) {
         pb.stage = 'intro';
@@ -464,6 +474,7 @@ export class GameScene {
       if (pb.t >= CONFIG.launchIntroSec) {
         pb.stage = 'sim';
         pb.t = 0;
+        this.onEvent?.('launch');
       }
       return;
     }
@@ -474,6 +485,11 @@ export class GameScene {
       pb.simT += dt * speed; // 슬로모 구간은 시뮬 끝을 넘어서도 진행
 
       this.applyFrames(pb, pb.simT);
+      const hits = pb.res.hits ?? [];
+      while (pb.hitIdx < hits.length && hits[pb.hitIdx].tick <= pb.simT * CONFIG.tickRate) {
+        this.onEvent?.('hit', hits[pb.hitIdx].v);
+        pb.hitIdx++;
+      }
       this.updateFalling(pb, dt * speed);
       for (const p of pb.res.pickups) {
         const box = this.boxes.get(p.boxId);
@@ -543,6 +559,7 @@ export class GameScene {
       if (g.position.y < -1.4 && !s.splashed) {
         s.splashed = true;
         this.spawnSplash(g.position.clone());
+        if (!b.clone) this.onEvent?.('fall');
       }
       if (g.position.y < -5) {
         g.visible = false;
@@ -552,9 +569,12 @@ export class GameScene {
   }
 
   startCleanup(pb) {
-    const { oldRadius, newRadius, meltOut, newBoxes } = pb.res;
-    if (newRadius < oldRadius - 1e-3) this.spawnShards(oldRadius, newRadius);
-    for (const id of meltOut) {
+    const { oldRadius, newRadius, meltOut, afkOut = [], newBoxes } = pb.res;
+    if (newRadius < oldRadius - 1e-3) {
+      this.spawnShards(oldRadius, newRadius);
+      this.onEvent?.('melt');
+    }
+    for (const id of [...meltOut, ...afkOut]) {
       const b = pb.bodies.find((x) => x?.id === id);
       if (!b) continue;
       const g = b.e.group;
@@ -778,12 +798,23 @@ export class GameScene {
     const h = this.canvas.clientHeight;
     const now = performance.now();
     const v = new THREE.Vector3();
+    // 펭귄이 많으면 카메라에서 가까운 순으로 MAX_LABELS개만 이름을 보여줌 (내 것·말풍선 있는 것은 항상)
+    const visible = [...this.pieces.values()].filter((e) => e.group.visible);
+    let allowed = null;
+    if (visible.length > MAX_LABELS) {
+      const byDist = visible
+        .map((e) => ({ e, d: e.group.position.distanceTo(this.camera.position) }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, MAX_LABELS)
+        .map((x) => x.e);
+      allowed = new Set(byDist);
+    }
     for (const e of this.pieces.values()) {
       if (e.bubbleUntil && now > e.bubbleUntil) {
         e.bubble.classList.add('hidden');
         e.bubbleUntil = 0;
       }
-      if (!e.group.visible) {
+      if (!e.group.visible || (allowed && !allowed.has(e) && e.id !== this.myId && !e.bubbleUntil)) {
         e.label.style.display = 'none';
         continue;
       }
@@ -1053,7 +1084,7 @@ function snowflakeTexture() {
 function makeSnow() {
   const size = 160;
   const height = 50;
-  const n = 6000;
+  const n = MOBILE ? 2000 : 6000;
   const a = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
     a[i * 3] = (Math.random() - 0.5) * size;

@@ -1,5 +1,6 @@
 import { CONFIG, ITEMS, QUICK_CHATS, PROTOCOL, clonePosition, startBoardRadius } from '../shared/config.js';
 import { GameScene } from './scene.js';
+import { sound } from './sound.js';
 
 const $ = (s) => document.querySelector(s);
 // 게임이 올라간 경로 (예: '/' 또는 '/pengkkaki/'). nginx 하위 경로 배포 지원
@@ -23,6 +24,8 @@ let lastTurn = 0;
 let myCrackPlaced = false; // 유령: 이번 턴에 균열을 놓았는지
 let wasAlive = false; // 유령이 된 순간을 알기 위해
 let matchResultOpen = false; // 최종 결과창을 닫기 전까지 화면 유지
+let practiceTip = false; // 혼자 연습 첫 턴에만 조작 안내 배너
+let lastTickSec = -1; // 조준 마지막 3초 소리
 
 function newAim() {
   return { main: { angle: 0, power: 0 }, clone: { angle: 0, power: 0 }, target: 'main', useItem: false, confirmed: false };
@@ -126,6 +129,10 @@ function onMessage(m) {
       show('game');
       $('#overlay').classList.add('hidden');
       sysChat('게임 시작!');
+      if (m.practice) {
+        sysChat('🐧 처음이면: 화면을 당겼다 놓으면 반대 방향으로 미끄러져요. 세기 100%면 약 30칸, 판 반지름은 28칸이에요. 끝까지 당기면 혼자서도 밖으로 나갈 수 있으니 조심!');
+        practiceTip = true;
+      }
       break;
     case 'state':
       applyState(m);
@@ -292,12 +299,18 @@ function applyState(s) {
   if (mine && wasAlive && !mine.alive) {
     banner('👻 유령이 되었어요!<br><small>판 위 아무 곳에나 균열을 놓아 산 사람을 방해할 수 있어요</small>', 3200);
     sysChat('👻 유령이 되었어요. 조준 단계마다 판 위 아무 곳이나 눌러 균열을 놓을 수 있어요. 균열 위에 멈춘 펭귄은 다음 턴 세기가 최대 50%가 돼요.');
+    sound.play('ghost');
   }
   wasAlive = !!mine?.alive;
   if (s.phase === 'aim' && s.turn !== lastTurn) {
     lastTurn = s.turn;
     Object.assign(aim, newAim());
     if (s.turn === 1 && mine?.alive) scene.faceCenter(mine.x, mine.y); // 판 시작은 중심을 바라봄
+    if (s.myAfkWarn) banner('⚠️ 지난 턴에 입력이 없었어요<br><small>이번에도 없으면 자리를 비운 것으로 보고 탈락해요</small>', 3000);
+    else if (practiceTip && s.turn === 1 && mine?.alive) {
+      setTimeout(() => banner('화면을 당겼다 놓으면 발사!<br><small>세기 100% = 약 30칸 · 판 반지름 28칸 · 판 밖은 탈락</small>', 4000), 1600);
+      practiceTip = false;
+    }
   }
   deadline = performance.now() + s.timeLeftMs;
   aim.confirmed = !!mine?.confirmed;
@@ -334,8 +347,9 @@ function updateAimUi() {
   else if (ghost && myCrackPlaced) {
     hint.innerHTML = '✔ <b>균열을 놓았어요</b> — 발사 때 모두에게 공개돼요<span class="sub">다른 곳을 누르면 위치를 옮길 수 있어요</span>';
   } else if (ghost) {
+    const quota = s ? ` · 이번 턴 균열 ${s.crackCount}/${s.crackMax} (생존자 수만큼, 먼저 놓은 순)` : '';
     hint.innerHTML = '👻 <b>유령도 판에 영향을 줄 수 있어요!</b> 판 위 아무 곳이나 눌러 균열을 놓으세요'
-      + '<span class="sub">균열 위에 멈춘 펭귄은 다음 턴 세기가 최대 50%로 제한돼요 (턴마다 1개)</span>';
+      + `<span class="sub">균열 위에 멈춘 펭귄은 다음 턴 세기가 최대 50%로 제한돼요${quota}</span>`;
   }
   hint.classList.toggle('done', ghost && myCrackPlaced);
   hint.classList.toggle('hidden', !(ghost || (!mine && s)));
@@ -582,6 +596,7 @@ function playTurn(res) {
     }
     const falls = res.falls.filter((f) => !f.id.includes('#')).map((f) => f.id);
     for (const id of [...falls, ...res.meltOut]) sysChat(`${names[id]} 탈락!`);
+    for (const id of res.afkOut ?? []) sysChat(`💤 ${names[id]}이(가) 자리를 비워 탈락했어요.`);
     for (const p of res.pickups) if (p.id === me.id && p.gained) toast('아이템을 획득했어요! 다음 턴부터 쓸 수 있어요.');
     if (res.capped.includes(me.id)) toast('🧊 유령 균열 위에 멈췄어요. 다음 턴 세기 최대 50%!');
     flushQueue();
@@ -597,6 +612,7 @@ function nameOf(id) {
 }
 
 function showRoundEnd(m) {
+  sound.play('fanfare');
   const ids = Object.keys(m.ranks).sort((a, b) => m.ranks[a] - m.ranks[b]);
   const rows = ids
     .map((id) => `<tr><td>${m.ranks[id]}위</td><td>${esc(nameOf(id))}</td><td>${m.duel ? `${m.wins[id]}승` : `${m.scores[id]}점`}</td></tr>`)
@@ -763,8 +779,11 @@ function tickHud() {
   const left = Math.max(0, deadline - performance.now());
   const t = $('#timer');
   if (s.phase === 'aim' && !scene.playback) {
-    t.textContent = Math.ceil(left / 1000);
+    const sec = Math.ceil(left / 1000);
+    t.textContent = sec;
     t.classList.toggle('urgent', left < 3000);
+    if (left < 3000 && left > 0 && sec !== lastTickSec && canAim()) sound.play('tick');
+    lastTickSec = sec;
   } else t.textContent = '';
   $('#round-info').textContent = s.duel
     ? `${s.round}판째 (${Math.ceil(s.totalRounds / 2)}선승) · ${s.turn}턴`
@@ -913,8 +932,22 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
+// ───────── 소리 ─────────
+function renderSoundBtn() {
+  $('#btn-sound').textContent = sound.muted ? '🔇' : '🔊';
+  $('#btn-sound').title = sound.muted ? '소리 켜기' : '소리 끄기';
+}
+$('#btn-sound').onclick = () => {
+  sound.setMuted(!sound.muted);
+  renderSoundBtn();
+  sound.play('click');
+};
+renderSoundBtn();
+for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, () => sound.unlock(), { once: true });
+
 // ───────── 시작 ─────────
 scene = new GameScene($('#three'), $('#labels'));
+scene.onEvent = (name, data) => sound.play(name, data);
 if (location.search.includes('debug')) window.__peng = { scene }; // 자동 테스트용
 initInput();
 $('#name-input').value = me.name;

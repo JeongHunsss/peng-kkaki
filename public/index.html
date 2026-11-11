@@ -18,6 +18,7 @@
         <p class="sub">빙판 위 펭귄 밀치기 — 마지막까지 남아라!</p>
         <label class="field">닉네임 <input id="name-input" maxlength="12" placeholder="펭귄123" /></label>
         <h3>혼자 연습 (봇과 대결)</h3>
+        <p class="muted tip">처음이면 여기서 한 판 해 보세요. 당겼다 놓으면 발사, 세기 100%면 약 30칸이에요.</p>
         <div class="row">
           <label class="inline">봇 <input id="practice-bots" type="number" min="1" max="29" value="3" />명</label>
           <button class="btn primary" id="btn-practice">연습 시작</button>
@@ -38,7 +39,8 @@
             <li>모두 동시에 방향·세기를 정하고 동시에 출발해요. 남의 조준은 안 보여요.</li>
             <li>말 중심이 판 밖으로 나가면 탈락. 판은 매 턴 녹아서 줄어들어요.</li>
             <li>상자를 먹으면 아이템(앵커·세기 2배·크기 2배·분신)을 얻어요. 다음 턴부터 사용 가능.</li>
-            <li>탈락하면 유령이 되어 판 위 아무 곳에나 균열을 놓을 수 있어요. 균열 위에 멈춘 말은 다음 턴 세기 50% 제한.</li>
+            <li>탈락하면 유령이 되어 판 위 아무 곳에나 균열을 놓을 수 있어요. 균열 위에 멈춘 말은 다음 턴 세기 50% 제한. 한 턴에 공개되는 균열은 생존자 수만큼(먼저 놓은 순).</li>
+            <li>2턴 연속 입력이 없으면(끊김·시간 초과) 자리를 비운 것으로 보고 탈락해요.</li>
             <li>가끔(턴마다 10%) 출발 직전에 이벤트가 와요. 🌍 지구 온난화: 얼음에 구멍이 뚫림 · 🌨️ 눈보라: 그 턴만 50% 더 미끄러움.</li>
           </ul>
         </details>
@@ -89,6 +91,7 @@
         <canvas id="three"></canvas>
         <div id="labels" class="labels"></div>
         <button id="btn-exit" class="btn small exit-btn" title="게임에서 나가 메뉴로">✕ 나가기</button>
+        <button id="btn-sound" class="btn small sound-btn" title="소리 끄기">🔊</button>
         <div id="cam-ctrl" class="cam-ctrl">
           <div id="cam-mode" class="cam-mode">🎯 내 시점</div>
           <div class="cam-rot">
