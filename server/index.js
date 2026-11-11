@@ -14,6 +14,8 @@ const HOST = process.env.HOST || undefined; // 기본: IPv4·IPv6 모두에서 �
 if (Number(process.env.AIM_TIME_MS) > 0) CONFIG.aimTimeMs = Number(process.env.AIM_TIME_MS);
 // 테스트용: 지구 온난화 확률 덮어쓰기 (예: WARMING_CHANCE=1 이면 매 턴)
 if (process.env.WARMING_CHANCE !== undefined) CONFIG.warmingChance = Math.min(1, Math.max(0, Number(process.env.WARMING_CHANCE) || 0));
+// 테스트용: 눈보라 확률 덮어쓰기 (예: BLIZZARD_CHANCE=1 이면 매 턴)
+if (process.env.BLIZZARD_CHANCE !== undefined) CONFIG.blizzardChance = Math.min(1, Math.max(0, Number(process.env.BLIZZARD_CHANCE) || 0));
 
 const MAX_MSG_BYTES = 16 * 1024; // 클라이언트 메시지는 아주 작음
 const MAX_MSGS_PER_SEC = 30; // 연결당 초당 메시지 상한 (넘으면 버림)

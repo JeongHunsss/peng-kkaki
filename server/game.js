@@ -39,6 +39,7 @@ export class Game {
     this.history = [];
     this.bots = new Set(opts.bots ?? []);
     this.warmingChance = opts.warmingChance ?? CONFIG.warmingChance;
+    this.blizzardChance = opts.blizzardChance ?? CONFIG.blizzardChance;
     this.botTimers = [];
   }
 
@@ -238,7 +239,11 @@ export class Game {
       r.boxes = r.boxes.filter((b) => !inAnyHole(b.x, b.y, [warming]));
     }
 
-    const sim = simulate(bodies, { boardRadius: r.radius, boxes: r.boxes, holes: r.holes });
+    // 눈보라: 이번 턴만 마찰이 줄어 같은 세기로 1.5배 멀리 미끄러짐 (감속이 일정하므로 거리 ∝ 1/마찰)
+    const blizzard = this.blizzardChance > 0 && this.random() < this.blizzardChance;
+    const friction = blizzard ? CONFIG.friction / CONFIG.blizzardSlideMul : CONFIG.friction;
+
+    const sim = simulate(bodies, { boardRadius: r.radius, boxes: r.boxes, holes: r.holes, friction });
 
     // ── 정리 단계 ──
     // 1) 탈락 처리 (낙하 순서 기록)
@@ -323,7 +328,7 @@ export class Game {
     const aliveAfter = this.aliveIds();
     const roundOver = aliveAfter.length <= 1;
 
-    const playbackSec = playbackSeconds(sim.ticks, realFalls, !!warming);
+    const playbackSec = playbackSeconds(sim.ticks, realFalls, !!warming, blizzard);
 
     this.opts.broadcast({
       t: 'turnResult',
@@ -343,6 +348,7 @@ export class Game {
       newBoxes,
       boxes: r.boxes,
       warming,
+      blizzard,
       holes: r.holes,
       roundOver,
       playbackSec,

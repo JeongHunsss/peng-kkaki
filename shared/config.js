@@ -39,6 +39,11 @@ export const CONFIG = {
   holeRadiusMax: 4,
   warmingSec: 1.8, // 안내 문구 + 얼음 깨지는 연출 시간
 
+  // 눈보라 이벤트: 모두 조준을 마친 뒤 출발 직전에 발생. 그 턴만 얼음이 더 미끄러움 (같은 세기로 1.5배 멀리)
+  blizzardChance: 0.1, // 턴마다 확률 (지구 온난화와 별개라 같이 올 수도 있음)
+  blizzardSlideMul: 1.5,
+  blizzardSec: 1.6, // 안내 문구 + 눈보라가 몰아치는 연출 시간
+
   launchIntroSec: 0.5, // 출발 순간 카메라가 위로 빠지는 시간
   slowmoSec: 0.3, // 낙하 슬로모 길이 (게임 시간)
   slowmoSpeed: 0.25,
@@ -109,9 +114,9 @@ export function slowmoWindows(falls) {
 }
 
 // 클라이언트가 한 턴을 재생하는 데 걸리는 시간(초). 서버는 이만큼 기다렸다가 다음 조준 단계로.
-export function playbackSeconds(ticks, realFalls, warming = false) {
+export function playbackSeconds(ticks, realFalls, warming = false, blizzard = false) {
   const slow = slowmoWindows(realFalls).length * CONFIG.slowmoSec * (1 / CONFIG.slowmoSpeed - 1);
-  return (warming ? CONFIG.warmingSec : 0) + CONFIG.launchIntroSec + ticks / CONFIG.tickRate + slow + CONFIG.cleanupSec + 0.3;
+  return (warming ? CONFIG.warmingSec : 0) + (blizzard ? CONFIG.blizzardSec : 0) + CONFIG.launchIntroSec + ticks / CONFIG.tickRate + slow + CONFIG.cleanupSec + 0.3;
 }
 
 // 무작위 구멍 반지름. 판이 아주 작아졌으면 판보다 크지 않게만 제한

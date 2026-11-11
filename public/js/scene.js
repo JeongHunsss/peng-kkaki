@@ -112,6 +112,13 @@ export class GameScene {
     this.ghostZone.visible = false;
     s.add(this.ghostZone);
 
+    // 눈보라: 카메라가 보는 곳 주변에 눈송이를 뿌림
+    this.snow = makeSnow();
+    this.snow.visible = false;
+    this.snowLevel = 0; // 0~1, 부드럽게 켜고 끔
+    this.snowOn = false;
+    s.add(this.snow);
+
     this.crackGroup = new THREE.Group();
     s.add(this.crackGroup);
     this.myCrackMarker = makeCrack('#c9b8ff', 0.9);
@@ -152,8 +159,9 @@ export class GameScene {
   // 판 크기(최대 반지름 68)에 맞춰 안개·그림자 범위를 맞춤
   fitWorld(radius) {
     const R = Math.max(radius, 10);
-    this.scene.fog.near = R * 2.2;
-    this.scene.fog.far = R * 7 + 60;
+    this.fogBase = { near: R * 2.2, far: R * 7 + 60 }; // 눈보라 때는 updateSnow가 여기서 당겨 씀
+    this.scene.fog.near = this.fogBase.near;
+    this.scene.fog.far = this.fogBase.far;
     const sc = this.sun.shadow.camera;
     const half = R + 6;
     if (sc.right !== half) {
@@ -272,6 +280,9 @@ export class GameScene {
   // 게임에서 나갈 때: 재생 중단 + 말·상자·구멍·효과 전부 정리
   clearAll() {
     this.playback = null;
+    this.snowOn = false;
+    this.snowLevel = 0;
+    this.snow.visible = false;
     for (const [id] of this.pieces) this.removePiece(id);
     this.resetRound();
     for (const f of this.fx) this.scene.remove(f.obj);
@@ -413,7 +424,7 @@ export class GameScene {
     const simEnd = (res.frames.length - 1) * frameDt;
     this.playback = {
       res, bodies, frameDt, simEnd, onDone,
-      stage: res.warming ? 'warming' : 'intro', t: 0, simT: 0,
+      stage: res.warming ? 'warming' : res.blizzard ? 'blizzard' : 'intro', t: 0, simT: 0,
       holeOpened: false,
       windows: slowmoWindows(res.falls.filter((f) => !f.id.includes('#'))),
       shards: false,
@@ -435,6 +446,15 @@ export class GameScene {
         this.shake = 0.6;
       }
       if (pb.t >= CONFIG.warmingSec) {
+        pb.stage = pb.res.blizzard ? 'blizzard' : 'intro';
+        pb.t = 0;
+      }
+      return;
+    }
+    if (pb.stage === 'blizzard') {
+      // 눈보라가 몰아친 뒤 발사 (눈은 재생이 끝날 때까지 계속)
+      this.snowOn = true;
+      if (pb.t >= CONFIG.blizzardSec) {
         pb.stage = 'intro';
         pb.t = 0;
       }
@@ -567,10 +587,45 @@ export class GameScene {
     this.setBoxes(pb.res.boxes);
     this.setHoles(pb.res.holes);
     this.crackGroup.clear(); // 균열은 이번 발사에만 효과 → 다음 조준 때는 지움 (걸린 사람은 🧊로 표시)
+    this.snowOn = false; // 눈보라는 이번 턴만
     pb.onDone?.();
   }
 
   // ───────── 효과 ─────────
+  // 눈보라: 바람에 비스듬히 날리는 눈. 카메라가 보는 곳을 중심으로 상자 안에서 순환
+  updateSnow(dt) {
+    this.snowLevel = Math.min(1, Math.max(0, this.snowLevel + (this.snowOn ? dt * 2 : -dt * 1.2)));
+    const sn = this.snow;
+    const k = this.snowLevel;
+    const wasVisible = sn.visible;
+    sn.visible = k > 0;
+    if (!sn.visible && !wasVisible) return;
+    // 하늘·안개가 하얗게 흐려지고 시야가 짧아짐
+    const fog = this.scene.fog;
+    fog.color.copy(SKY_COLOR).lerp(BLIZZARD_COLOR, 0.5 * k);
+    this.scene.background.copy(fog.color);
+    if (this.fogBase) {
+      fog.near = this.fogBase.near * (1 - 0.3 * k);
+      fog.far = this.fogBase.far * (1 - 0.3 * k);
+    }
+    if (!sn.visible) return;
+    sn.material.opacity = 0.95 * k;
+    const { size, height } = sn.userData;
+    const pos = sn.geometry.attributes.position;
+    const a = pos.array;
+    const t = performance.now() / 1000;
+    const wind = 14;
+    for (let i = 0; i < a.length; i += 3) {
+      a[i] += (wind + Math.sin(t * 2 + i) * 3) * dt;
+      a[i + 1] -= (6 + (i % 7)) * dt;
+      a[i + 2] += Math.cos(t * 1.3 + i) * 2 * dt;
+      if (a[i] > size / 2) a[i] -= size;
+      if (a[i + 1] < 0) a[i + 1] += height;
+    }
+    pos.needsUpdate = true;
+    sn.position.set(this.camTarget.x, 0, this.camTarget.z);
+  }
+
   // 구멍이 뚫릴 때 얼음 조각이 튀고 물보라
   spawnHoleBurst(h) {
     const mat = new THREE.MeshStandardMaterial({ color: '#d6f1ff', roughness: 0.2, transparent: true });
@@ -760,6 +815,7 @@ export class GameScene {
       if (!this.playback && e.alive) e.group.children[0].position.y = 1.05 + Math.sin(t * 3 + e.group.position.x) * 0.02;
     }
     this.updateFx(dt);
+    this.updateSnow(dt);
     this.updateCamera(dt);
     this.updateLabels();
     this.renderer.render(this.scene, this.camera);
@@ -975,6 +1031,44 @@ function makeTextSprite(lines, color) {
   sp.renderOrder = 20;
   sp.scale.set(0.26, (0.26 * c.height) / c.width, 1);
   return sp;
+}
+
+const SKY_COLOR = new THREE.Color('#0a2a47');
+const BLIZZARD_COLOR = new THREE.Color('#c9d9e8');
+
+// 동그랗고 가장자리가 흐린 눈송이
+function snowflakeTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const x = c.getContext('2d');
+  const g = x.createRadialGradient(16, 16, 0, 16, 16, 16);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.5, 'rgba(255,255,255,0.8)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  x.fillStyle = g;
+  x.fillRect(0, 0, 32, 32);
+  return new THREE.CanvasTexture(c);
+}
+
+function makeSnow() {
+  const size = 160;
+  const height = 50;
+  const n = 6000;
+  const a = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    a[i * 3] = (Math.random() - 0.5) * size;
+    a[i * 3 + 1] = Math.random() * height;
+    a[i * 3 + 2] = (Math.random() - 0.5) * size;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(a, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+    color: '#ffffff', size: 0.8, map: snowflakeTexture(), transparent: true, opacity: 0, depthWrite: false, fog: false,
+  }));
+  pts.frustumCulled = false;
+  pts.renderOrder = 15;
+  pts.userData = { size, height };
+  return pts;
 }
 
 function makeCrack(color, opacity) {

@@ -6,9 +6,9 @@ const EPS_V = 0.01;
 
 /**
  * @param {Array<{id:string,x:number,y:number,vx:number,vy:number,r:number,m:number,real:boolean}>} input
- * @param {{boardRadius:number, boxes?:Array<{id:string,x:number,y:number}>, holes?:Array<{x:number,y:number,r:number}>}} opts
+ * @param {{boardRadius:number, boxes?:Array<{id:string,x:number,y:number}>, holes?:Array<{x:number,y:number,r:number}>, friction?:number}} opts
  */
-export function simulate(input, { boardRadius, boxes = [], holes = [] }) {
+export function simulate(input, { boardRadius, boxes = [], holes = [], friction = CONFIG.friction }) {
   const bodies = input.map((b) => ({ ...b, fallen: false }));
   const dt = 1 / CONFIG.tickRate;
   const h = dt / SUBSTEPS;
@@ -45,7 +45,7 @@ export function simulate(input, { boardRadius, boxes = [], holes = [] }) {
         if (b.fallen) continue;
         const sp = Math.hypot(b.vx, b.vy);
         if (sp > 0) {
-          const ns = Math.max(0, sp - CONFIG.friction * h);
+          const ns = Math.max(0, sp - friction * h);
           b.vx *= ns / sp;
           b.vy *= ns / sp;
         }
