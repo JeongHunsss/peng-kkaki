@@ -67,6 +67,7 @@ function makeGame(n, extra = {}) {
     isConnected: () => true,
     onEnd: () => {},
     warmingChance: 0,
+    blizzardChance: 0,
     random: () => ((seed = (seed * 16807) % 2147483647) / 2147483647),
     ...extra,
   });
@@ -242,4 +243,33 @@ test('유령 균열은 판 위 어디든(중앙 포함) 놓을 수 있고, 판 �
   g.onCrack(c, { x: g.round.radius + 1, y: 0 });
   assert.equal(sent.length, n, '판 밖 거부');
   g.stop();
+});
+
+test('마찰을 1/1.5로 줄이면 같은 세기로 1.5배 멀리 미끄러짐', () => {
+  const res = simulate([body('a', 0, 0, maxSpeed(), 0)], { boardRadius: 200, friction: CONFIG.friction / CONFIG.blizzardSlideMul });
+  assert.ok(Math.abs(res.final[0].x - 45) < 0.5, `moved ${res.final[0].x}`);
+});
+
+test('눈보라: 결과에 표시되고, 그 턴만 1.5배 멀리 미끄러짐', () => {
+  const run = (blizzardChance) => {
+    const { g, sent } = makeGame(2, { blizzardChance });
+    g.start();
+    const [a, b] = Object.keys(g.round.pieces);
+    const pa = g.round.pieces[a];
+    const x0 = pa.x;
+    const y0 = pa.y;
+    const ang = Math.atan2(-pa.y, -pa.x); // 중심 방향 (판 안에서 멈춤)
+    g.onAim(a, { angle: ang, power: 0.5 });
+    g.onAim(b, { angle: 0, power: 0 });
+    const tr = sent.find((m) => m.t === 'turnResult');
+    const moved = Math.hypot(g.round.pieces[a].x - x0, g.round.pieces[a].y - y0);
+    g.stop();
+    return { tr, moved };
+  };
+  const calm = run(0);
+  const storm = run(1);
+  assert.equal(calm.tr.blizzard, false);
+  assert.equal(storm.tr.blizzard, true);
+  assert.ok(Math.abs(storm.moved / calm.moved - 1.5) < 0.02, `${calm.moved} → ${storm.moved}`);
+  assert.ok(storm.tr.playbackSec > calm.tr.playbackSec, '안내 연출 시간만큼 재생이 길어짐');
 });

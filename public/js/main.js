@@ -531,12 +531,22 @@ function playTurn(res) {
     if (res.revealed.length) banner(res.revealed.map((r) => `${names[r.id]}: ${ITEMS[r.item].name}!`).join('<br>'), 1400);
     else banner('발사!', 700);
   };
+  // 이벤트 안내를 차례로 띄우고 (지구 온난화 → 눈보라) 그다음 발사
+  let delay = 0;
   if (res.warming) {
-    // 지구 온난화: 안내 → 구멍 뚫림 → 그다음 발사
     banner('🌍 지구 온난화가 왔어요!<br><small>얼음에 구멍이 뚫립니다</small>', CONFIG.warmingSec * 1000 - 100);
     sysChat('🌍 지구 온난화! 얼음에 구멍이 뚫렸어요.');
-    setTimeout(launchBanner, CONFIG.warmingSec * 1000);
-  } else launchBanner();
+    delay += CONFIG.warmingSec * 1000;
+  }
+  if (res.blizzard) {
+    const show = () => banner('🌨️ 눈보라가 몰아쳐요!<br><small>이번 턴은 얼음이 50% 더 미끄러워요</small>', CONFIG.blizzardSec * 1000 - 100);
+    if (delay) setTimeout(show, delay);
+    else show();
+    sysChat('🌨️ 눈보라! 이번 턴은 같은 세기로 1.5배 더 멀리 미끄러져요.');
+    delay += CONFIG.blizzardSec * 1000;
+  }
+  if (delay) setTimeout(launchBanner, delay);
+  else launchBanner();
   if (res.cracks.length) {
     sysChat(`👻 유령 균열 ${res.cracks.length}개 공개! 위에 멈추면 다음 턴 세기가 최대 50%가 돼요.`);
   }

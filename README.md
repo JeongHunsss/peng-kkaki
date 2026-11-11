@@ -52,7 +52,7 @@ PORT=3000 node server/index.js     # pm2/systemd 등으로 상시 실행
     proxy_read_timeout 120s;
   }
   ```
-- 환경변수: `PORT`(기본 3000), `HOST`(기본: 모든 IPv4·IPv6 주소), `AIM_TIME_MS`(조준 시간 덮어쓰기, 테스트용), `WARMING_CHANCE`(지구 온난화 확률 덮어쓰기, 테스트용 — 기본 0.1), `DEBUG_WS=1`(수신 메시지 로그)
+- 환경변수: `PORT`(기본 3000), `HOST`(기본: 모든 IPv4·IPv6 주소), `AIM_TIME_MS`(조준 시간 덮어쓰기, 테스트용), `WARMING_CHANCE`(지구 온난화 확률 덮어쓰기, 테스트용 — 기본 0.1), `BLIZZARD_CHANCE`(눈보라 확률 덮어쓰기, 테스트용 — 기본 0.1), `DEBUG_WS=1`(수신 메시지 로그)
 - 신고는 서버 작업 폴더의 `reports.log`에 쌓입니다(컨테이너면 재생성 시 사라짐).
 
 ## 구조
