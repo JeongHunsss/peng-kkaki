@@ -265,8 +265,8 @@ function applyState(s) {
   const mine = myPlayer();
   myCrackPlaced = !!s.myCrack;
   if (mine && wasAlive && !mine.alive) {
-    banner('👻 유령이 되었어요!<br><small>판 가장자리에 균열을 놓아 산 사람을 방해할 수 있어요</small>', 3200);
-    sysChat('👻 유령이 되었어요. 조준 단계마다 보라색 가장자리를 눌러 균열을 놓을 수 있어요. 균열 위에 멈춘 펭귄은 다음 턴 세기가 최대 50%가 돼요.');
+    banner('👻 유령이 되었어요!<br><small>판 위 아무 곳에나 균열을 놓아 산 사람을 방해할 수 있어요</small>', 3200);
+    sysChat('👻 유령이 되었어요. 조준 단계마다 판 위 아무 곳이나 눌러 균열을 놓을 수 있어요. 균열 위에 멈춘 펭귄은 다음 턴 세기가 최대 50%가 돼요.');
   }
   wasAlive = !!mine?.alive;
   if (s.phase === 'aim' && s.turn !== lastTurn) {
@@ -309,7 +309,7 @@ function updateAimUi() {
   else if (ghost && myCrackPlaced) {
     hint.innerHTML = '✔ <b>균열을 놓았어요</b> — 발사 때 모두에게 공개돼요<span class="sub">다른 곳을 누르면 위치를 옮길 수 있어요</span>';
   } else if (ghost) {
-    hint.innerHTML = '👻 <b>유령도 판에 영향을 줄 수 있어요!</b> 보라색 가장자리를 눌러 균열을 놓으세요'
+    hint.innerHTML = '👻 <b>유령도 판에 영향을 줄 수 있어요!</b> 판 위 아무 곳이나 눌러 균열을 놓으세요'
       + '<span class="sub">균열 위에 멈춘 펭귄은 다음 턴 세기가 최대 50%로 제한돼요 (턴마다 1개)</span>';
   }
   hint.classList.toggle('done', ghost && myCrackPlaced);
@@ -476,7 +476,7 @@ function placeCrack(e) {
   if (!p) return;
   const R = game.state.radius;
   const d = Math.hypot(p.x, p.y);
-  if (d > R || d < R * (1 - CONFIG.ghostCrackZone)) return toast('가장자리 바깥 30% 영역에만 놓을 수 있어요.');
+  if (d > R) return toast('판 위에만 놓을 수 있어요.');
   send({ t: 'crack', x: p.x, y: p.y });
 }
 

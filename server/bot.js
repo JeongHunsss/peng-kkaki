@@ -43,15 +43,18 @@ export function botAim(game, id) {
   return input;
 }
 
-/** 유령 봇의 균열 위치: 살아 있는 말 근처 가장자리 */
+/** 유령 봇의 균열 위치: 살아 있는 말 근처 (판 안) */
 export function botCrack(game) {
   const rnd = game.random;
   const r = game.round;
   const alive = game.aliveIds();
-  const ref = alive.length ? r.pieces[alive[Math.floor(rnd() * alive.length)]] : { x: 1, y: 0 };
-  const a = Math.atan2(ref.y, ref.x) + jitter(rnd, 0.4);
-  const d = r.radius * (1 - CONFIG.ghostCrackZone * (0.2 + rnd() * 0.6));
-  return { x: Math.cos(a) * d, y: Math.sin(a) * d };
+  const ref = alive.length ? r.pieces[alive[Math.floor(rnd() * alive.length)]] : { x: 0, y: 0 };
+  let x = ref.x + jitter(rnd, 3);
+  let y = ref.y + jitter(rnd, 3);
+  const d = Math.hypot(x, y);
+  const max = r.radius * 0.95;
+  if (d > max) [x, y] = [(x / d) * max, (y / d) * max];
+  return { x, y };
 }
 
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);

@@ -102,9 +102,9 @@ export class GameScene {
     this.meltLine.position.y = 0.03;
     s.add(this.meltLine);
 
-    // 유령 균열 가능 영역
+    // 유령 균열 가능 영역 (판 전체)
     this.ghostZone = new THREE.Mesh(
-      new THREE.RingGeometry(1 - CONFIG.ghostCrackZone, 1, 128, 1),
+      new THREE.CircleGeometry(1, 128),
       new THREE.MeshBasicMaterial({ color: '#9b7bff', transparent: true, opacity: 0.18, depthWrite: false }),
     );
     this.ghostZone.rotation.x = -Math.PI / 2;
