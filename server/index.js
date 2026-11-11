@@ -35,7 +35,16 @@ const MIME = {
   '.json': 'application/json',
 };
 
-const lobby = new Lobby();
+// 신고 저장 위치. Docker에서는 /app/data 를 볼륨으로 붙인다 (README 참고)
+const REPORTS_FILE = process.env.REPORTS_FILE || path.join(ROOT, 'data', 'reports.log');
+try {
+  fs.mkdirSync(path.dirname(REPORTS_FILE), { recursive: true });
+  fs.accessSync(path.dirname(REPORTS_FILE), fs.constants.W_OK);
+} catch (e) {
+  console.error(`신고 저장 폴더에 쓸 수 없음: ${path.dirname(REPORTS_FILE)} (${e.message}). 신고가 저장되지 않습니다`);
+}
+
+const lobby = new Lobby({ reportsFile: REPORTS_FILE });
 
 const server = http.createServer((req, res) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') return res.writeHead(405).end();

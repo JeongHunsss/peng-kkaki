@@ -31,7 +31,7 @@ npm test           # 규칙/물리 단위 테스트 + 서버 E2E
 **Docker**
 ```bash
 docker build -t peng-kkaki .
-docker run -d -p 3000:3000 --restart unless-stopped --name peng-kkaki peng-kkaki
+docker run -d -p 3000:3000 --restart unless-stopped --name peng-kkaki -v ~/peng-kkaki-data:/app/data peng-kkaki
 ```
 
 **Docker 없이 (VM 등)**
