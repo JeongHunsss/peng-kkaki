@@ -1,0 +1,18 @@
+# PR마다 테스트를 돌린다. main 브랜치 보호 규칙에서 이 체크를 필수로 두면 깨진 PR을 머지할 수 없다.
+name: test
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
