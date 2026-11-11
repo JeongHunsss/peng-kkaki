@@ -221,6 +221,12 @@ function renderRoomList(rooms) {
     .join('');
 }
 
+$('#room-members').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-kick]');
+  if (!b) return;
+  const m = room?.members.find((x) => x.id === b.dataset.kick);
+  if (m && confirm(`${m.name} 님을 내보낼까요?\n이 방에는 다시 들어올 수 없어요.`)) send({ t: 'kick', id: m.id });
+});
 $('#btn-leave-room').onclick = () => send({ t: 'leaveRoom' });
 $('#btn-start').onclick = () => send({ t: 'start' });
 $('#btn-copy-link').onclick = async () => {
@@ -242,8 +248,10 @@ function renderRoom() {
   const isHost = room.hostId === me.id;
   $('#room-code').textContent = room.code;
   $('#room-count').textContent = `${room.members.length}/${room.settings.maxPlayers}`;
+  const kickable = (m) => isHost && m.id !== me.id && !m.bot;
   $('#room-members').innerHTML = room.members
-    .map((m) => `<li>${m.id === room.hostId ? '👑 ' : ''}${m.bot ? '🤖 ' : ''}${esc(m.name)}${m.id === me.id ? ' (나)' : ''}${m.connected ? '' : ' 📴'}</li>`)
+    .map((m) => `<li>${m.id === room.hostId ? '👑 ' : ''}${m.bot ? '🤖 ' : ''}${esc(m.name)}${m.id === me.id ? ' (나)' : ''}${m.connected ? '' : ' 📴'}`
+      + (kickable(m) ? `<button class="btn tiny kick" data-kick="${m.id}" title="내보내기 (다시 못 들어와요)">내보내기</button>` : '') + '</li>')
     .join('');
   $('#room-spectators').textContent = room.spectators.length ? `관전: ${room.spectators.map((s) => s.name).join(', ')}` : '';
   const sel = $('#set-max');

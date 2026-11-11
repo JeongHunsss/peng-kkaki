@@ -127,3 +127,34 @@ test('방 설정은 방장만, 인원 상한은 CONFIG 범위 안', () => {
   lobby.handle(a.user, { t: 'settings', maxPlayers: 999 });
   assert.equal(lobby.rooms.get(a.user.room).settings.maxPlayers, CONFIG.maxPlayers);
 });
+
+test('강퇴: 방장만 대기실에서, 내보내진 사람은 메뉴로 가고 같은 방에 다시 못 들어옴', () => {
+  const { lobby, join } = setup();
+  const a = join('A');
+  const b = join('B');
+  const c = join('C');
+  lobby.handle(a.user, { t: 'createRoom' });
+  const code = a.user.room;
+  lobby.handle(b.user, { t: 'joinRoom', code });
+  lobby.handle(c.user, { t: 'joinRoom', code });
+  // 방장이 아니면 무시
+  lobby.handle(b.user, { t: 'kick', id: c.user.id });
+  assert.equal(lobby.rooms.get(code).members.length, 3);
+  // 방장은 자기 자신을 못 내보냄
+  lobby.handle(a.user, { t: 'kick', id: a.user.id });
+  assert.equal(lobby.rooms.get(code).members.length, 3);
+  // 정상 강퇴
+  lobby.handle(a.user, { t: 'kick', id: c.user.id });
+  assert.equal(lobby.rooms.get(code).members.length, 2);
+  assert.equal(c.user.room, null);
+  assert.equal(c.last('notice').msg, '방장이 방에서 내보냈어요.');
+  assert.equal(c.last('menu').t, 'menu');
+  lobby.handle(c.user, { t: 'joinRoom', code });
+  assert.match(c.last('error').msg, /다시 들어갈 수 없어요/);
+  assert.equal(c.user.room, null);
+  // 게임 중에는 강퇴 불가
+  lobby.handle(a.user, { t: 'start' });
+  lobby.handle(a.user, { t: 'kick', id: b.user.id });
+  assert.equal(lobby.rooms.get(code).members.length, 2);
+  lobby.rooms.get(code).game.stop(); // 타이머를 멈춰야 테스트 프로세스가 끝남
+});

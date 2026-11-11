@@ -132,6 +132,9 @@ export class Lobby {
       case 'removeBot':
         this.removeBot(user);
         break;
+      case 'kick':
+        this.kick(user, String(msg.id ?? ''));
+        break;
       case 'aim':
         this.gameOf(user)?.onAim(user.id, msg);
         break;
@@ -197,6 +200,7 @@ export class Lobby {
       spectators: [],
       settings: { maxPlayers: CONFIG.maxPlayers, rounds: CONFIG.defaultRounds, items: true, freeChat: true },
       game: null,
+      banned: new Set(), // 강퇴된 사람의 토큰. 방이 사라지면 같이 사라짐
     };
     this.rooms.set(code, room);
     return room;
@@ -213,6 +217,7 @@ export class Lobby {
   joinRoom(user, code) {
     const room = this.rooms.get(code);
     if (!room) return send(user, { t: 'error', msg: '방을 찾을 수 없어요.' });
+    if (room.banned.has(user.token)) return send(user, { t: 'error', msg: '이 방에서 내보내져서 다시 들어갈 수 없어요.' });
     if (user.room === code) return this.sendRoom(room);
     if (user.room) this.leaveRoom(user);
     if (room.game) {
@@ -255,6 +260,19 @@ export class Lobby {
       this.purgeDisconnected(room);
       if (this.rooms.has(room.code)) this.sendRoom(room);
     }
+  }
+
+  // 방장이 대기실에서 사람을 내보냄. 내보내진 사람은 같은 방 코드로 다시 못 들어옴 (봇은 removeBot)
+  kick(user, id) {
+    const room = user.room && this.rooms.get(user.room);
+    if (!room || room.hostId !== user.id || room.game) return;
+    const target = this.userById(id);
+    if (!target || target.bot || target.id === user.id || target.room !== room.code) return;
+    room.banned.add(target.token);
+    this.leaveRoom(target);
+    send(target, { t: 'notice', msg: '방장이 방에서 내보냈어요.' });
+    this.toMenu(target);
+    if (this.rooms.has(room.code)) this.sendRoom(room);
   }
 
   // ───────── 봇 (혼자 테스트용) ─────────
