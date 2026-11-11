@@ -10,7 +10,8 @@ const toWorld = (x, y, h = 0) => new THREE.Vector3(x, h, y);
 const damp = (rate, dt) => 1 - Math.exp(-rate * dt);
 // 터치 기기(폰·태블릿)는 해상도·그림자·눈 입자를 낮춰 재생 중 프레임을 지킴
 const MOBILE = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-const MAX_LABELS = 12; // 펭귄이 이보다 많으면 가까운 순으로 이만큼만 이름을 보여줌 (내 것은 항상)
+// 이름표는 모두 보여준다(멀리서 날아오는 펭귄도 봐야 하니까). 대신 멀면 작게, 겹치면 위로 쌓는다
+const LABEL_H = 16; // 이름표 한 줄 높이(px)
 
 export class GameScene {
   constructor(canvas, labelsEl) {
@@ -798,23 +799,14 @@ export class GameScene {
     const h = this.canvas.clientHeight;
     const now = performance.now();
     const v = new THREE.Vector3();
-    // 펭귄이 많으면 카메라에서 가까운 순으로 MAX_LABELS개만 이름을 보여줌 (내 것·말풍선 있는 것은 항상)
-    const visible = [...this.pieces.values()].filter((e) => e.group.visible);
-    let allowed = null;
-    if (visible.length > MAX_LABELS) {
-      const byDist = visible
-        .map((e) => ({ e, d: e.group.position.distanceTo(this.camera.position) }))
-        .sort((a, b) => a.d - b.d)
-        .slice(0, MAX_LABELS)
-        .map((x) => x.e);
-      allowed = new Set(byDist);
-    }
+    const placed = []; // 이미 자리 잡은 이름표 {x, y, w, h}
+    const items = [];
     for (const e of this.pieces.values()) {
       if (e.bubbleUntil && now > e.bubbleUntil) {
         e.bubble.classList.add('hidden');
         e.bubbleUntil = 0;
       }
-      if (!e.group.visible || (allowed && !allowed.has(e) && e.id !== this.myId && !e.bubbleUntil)) {
+      if (!e.group.visible) {
         e.label.style.display = 'none';
         continue;
       }
@@ -825,9 +817,29 @@ export class GameScene {
         e.label.style.display = 'none';
         continue;
       }
+      const d = e.group.position.distanceTo(this.camera.position);
+      items.push({ e, x: ((v.x + 1) / 2) * w, y: ((1 - v.y) / 2) * h, d });
+    }
+    // 가까운 것부터 자리를 잡고, 뒤의 것이 겹치면 한 줄씩 위로 올림 (내 것은 항상 맨 먼저 = 제자리)
+    items.sort((a, b) => (a.e.id === this.myId ? -1 : b.e.id === this.myId ? 1 : a.d - b.d));
+    for (const it of items) {
+      const { e } = it;
+      // 멀수록 작게(최소 0.7배)·살짝 투명. 말풍선이 있으면 원래 크기
+      const scale = e.bubbleUntil ? 1 : Math.max(0.7, Math.min(1, 40 / it.d));
+      const lw = (e.nameEl.textContent.length * 8 + 8) * scale;
+      const lh = (e.bubbleUntil ? LABEL_H * 3 : LABEL_H) * scale;
+      let y = it.y;
+      for (let k = 0; k < 6; k++) {
+        const hit = placed.find((p) => Math.abs(p.x - it.x) < (p.w + lw) / 2 && Math.abs(p.y - y) < (p.h + lh) / 2);
+        if (!hit) break;
+        y = hit.y - (hit.h + lh) / 2 - 1;
+      }
+      placed.push({ x: it.x, y, w: lw, h: lh });
       e.label.style.display = '';
-      e.label.style.left = `${((v.x + 1) / 2) * w}px`;
-      e.label.style.top = `${((1 - v.y) / 2) * h}px`;
+      e.label.style.left = `${it.x}px`;
+      e.label.style.top = `${y}px`;
+      e.label.style.transform = `translate(-50%, -100%) scale(${scale.toFixed(2)})`;
+      e.label.style.opacity = e.id === this.myId || e.bubbleUntil ? 1 : 0.6 + 0.4 * (scale - 0.7) / 0.3;
     }
   }
 
