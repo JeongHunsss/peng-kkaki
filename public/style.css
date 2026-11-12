@@ -178,10 +178,21 @@ input, select {
 .chat-head { display: flex; justify-content: space-between; align-items: center; font-size: 0.85rem; gap: 4px; }
 .chat-tools { display: flex; gap: 6px; align-items: center; font-size: 0.75rem; }
 .chat-tools input { padding: 0; }
-.chat-log { flex: 1; overflow-y: auto; font-size: 0.88rem; background: rgba(0,0,0,0.25); border-radius: 10px; padding: 6px 8px; }
-.chat-log .msg { margin: 2px 0; word-break: break-all; }
+.chat-log-wrap { flex: 1; min-height: 0; position: relative; display: flex; }
+.chat-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; font-size: 0.88rem; line-height: 1.35; background: rgba(0,0,0,0.25); border-radius: 10px; padding: 6px 8px; }
+.chat-log .msg { margin: 3px 0; overflow-wrap: anywhere; }
+.chat-log .msg b { color: #bfe3ff; font-weight: 600; margin-right: 2px; }
+.chat-log .msg.me b { color: #ffbf69; }
+.chat-log .msg.me b::after { content: ' (나)'; font-weight: 400; font-size: 0.8em; opacity: 0.7; }
 .chat-log .msg.ghost { color: #b9a6ff; }
-.chat-log .msg.sys { color: #9bb6cc; font-style: italic; }
+.chat-log .msg.ghost b { color: #d3c6ff; }
+.chat-log .msg.sys { color: #9bb6cc; font-size: 0.82rem; }
+/* 위로 올려 읽는 동안 새 메시지가 오면 로그 아래쪽에 띄우는 버튼 */
+.chat-new {
+  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+  background: #ff9f1c; color: #1b1b1b; border: 0; border-radius: 999px; padding: 4px 12px;
+  font-size: 0.78rem; font-weight: 700; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.4); white-space: nowrap;
+}
 .chat-quick { display: flex; flex-wrap: wrap; gap: 4px; }
 .chat-quick button { flex: 1 0 22%; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; padding: 4px; cursor: pointer; font-size: 0.8rem; }
 .chat-form { display: flex; gap: 4px; }
@@ -221,14 +232,18 @@ input, select {
     background: none; z-index: 4; pointer-events: none;
   }
   .chat-dock .chat { position: relative; inset: auto; pointer-events: auto; padding: 0; background: none; }
+  /* 접힌 미리보기: 스크롤 위치와 상관없이 항상 마지막 줄들이 보이게 아래 정렬 */
   .chat-dock .chat:not(.open) .chat-log {
-    max-height: 3.2em; overflow: hidden; background: rgba(0,0,0,0.25); opacity: 0.8; pointer-events: none;
+    max-height: 3.2em; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end;
+    background: rgba(0,0,0,0.25); opacity: 0.8; pointer-events: none; border-radius: 8px; padding: 3px 6px;
   }
+  .chat-dock .chat:not(.open) .chat-log .msg { flex: 0 0 auto; margin: 1px 0; }
+  .chat-dock .chat:not(.open) .chat-new,
   .chat-dock .chat:not(.open) .chat-quick,
   .chat-dock .chat:not(.open) .chat-form,
   .chat-dock .chat:not(.open) .chat-tools label { display: none; }
   .chat-dock .chat.open { background: rgba(0,10,20,0.85); padding: 8px; border-radius: 12px; }
-  .chat-dock .chat.open .chat-log { height: 160px; }
+  .chat-dock .chat.open .chat-log-wrap { flex: none; height: 160px; }
   #chat-expand { display: inline-block; }
   .chat-head > span:first-child { display: none; }
   .ghost-hint { bottom: calc(34% + 8px); font-size: 0.8rem; width: 90%; }
