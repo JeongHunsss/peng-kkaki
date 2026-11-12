@@ -198,6 +198,7 @@ $('#name-input').addEventListener('change', (e) => {
   send({ t: 'setName', name: me.name });
 });
 $('#btn-create').onclick = () => send({ t: 'createRoom' });
+$('#btn-quick').onclick = () => send({ t: 'quickMatch' });
 $('#btn-practice').onclick = () => send({ t: 'practice', bots: Number($('#practice-bots').value) });
 $('#btn-add-bot').onclick = () => send({ t: 'addBot' });
 $('#btn-remove-bot').onclick = () => send({ t: 'removeBot' });
@@ -225,9 +226,10 @@ function renderRoomList(rooms) {
       const full = !r.inGame && r.players >= r.maxPlayers;
       const btn = r.inGame ? '관전' : full ? '가득 참' : '참가';
       const bots = r.bots ? ` · 봇 ${r.bots}` : '';
+      const tag = r.inGame ? '<span class="tag play">게임 중</span>' : r.auto ? '<span class="tag auto">자동 매칭</span>' : '<span class="tag">대기 중</span>';
       return `<li>
-        <span class="tag ${r.inGame ? 'play' : ''}">${r.inGame ? '게임 중' : '대기 중'}</span>
-        <span class="rl-main"><div class="rl-host">${esc(r.host)}의 방</div>
+        ${tag}
+        <span class="rl-main"><div class="rl-host">${r.auto ? '자동 매칭 방' : `${esc(r.host)}의 방`}</div>
           <div class="rl-sub">${r.code} · ${r.players}/${r.maxPlayers}명${bots}</div></span>
         <button class="btn small" data-join="${r.code}" ${full ? 'disabled' : ''}>${btn}</button></li>`;
     })
@@ -280,7 +282,31 @@ function renderRoom() {
   $('#bot-buttons').classList.toggle('hidden', !isHost);
   $('#btn-add-bot').disabled = room.members.length >= room.settings.maxPlayers;
   $('#btn-remove-bot').disabled = !room.members.some((m) => m.bot);
+  // 자동 매칭 방: 방장 대신 카운트다운으로 시작
+  $('#room-title').textContent = room.auto ? '⚡ 자동 매칭' : '방 코드';
+  $('#btn-start').classList.toggle('hidden', !!room.auto);
+  $('#btn-leave-room').textContent = room.auto ? '매칭 취소' : '나가기';
+  autoDeadline = room.auto && room.autoStartIn != null ? Date.now() + room.autoStartIn : 0;
+  renderAutoStatus();
 }
+
+// 자동 매칭 대기실 안내: 혼자면 "기다리는 중", 2명 이상이면 남은 초를 센다
+let autoDeadline = 0;
+function renderAutoStatus() {
+  const el = $('#auto-status');
+  const on = !!room?.auto && !room.inGame;
+  el.classList.toggle('hidden', !on);
+  if (!on) return;
+  const here = room.members.filter((m) => m.connected).length;
+  const left = Math.max(0, Math.ceil((autoDeadline - Date.now()) / 1000));
+  el.classList.toggle('go', !!autoDeadline);
+  el.innerHTML = autoDeadline
+    ? `<span class="big">${left}</span>초 뒤 시작 · ${here}/${room.settings.maxPlayers}명 (사람이 더 오면 같이 해요)`
+    : '다른 펭귄을 기다리는 중… 🐧 2명이 모이면 카운트다운이 시작돼요';
+}
+setInterval(() => {
+  if (autoDeadline && !$('#screen-room').classList.contains('hidden')) renderAutoStatus();
+}, 250);
 
 // ───────── 게임 상태 ─────────
 function applyState(s) {
@@ -637,8 +663,9 @@ function showMatchEnd(m) {
   matchResultOpen = true;
   overlay(`<div class="card center"><h2>🏆 최종 결과</h2>
     <table class="result-table">${rows}</table>
+    ${room?.auto ? '<p class="muted">이 방에 남아 있으면 2명 이상일 때 다음 판이 자동으로 시작돼요.</p>' : ''}
     <div class="row"><button class="btn" id="btn-match-exit">메뉴로 나가기</button>
-    <button class="btn primary" id="btn-after-match">대기실로</button></div></div>`);
+    <button class="btn primary" id="btn-after-match">${room?.auto ? '한 판 더' : '대기실로'}</button></div></div>`);
   $('#btn-match-exit').onclick = () => send({ t: 'leaveRoom' });
   $('#btn-after-match').onclick = () => {
     matchResultOpen = false;
@@ -954,7 +981,7 @@ function syncChatRoom(next) {
   if (next.code !== chatRoomCode) {
     clearChat();
     chatRoomCode = next.code;
-    sysChat(`방 ${next.code}에 들어왔어요.`);
+    sysChat(next.auto ? '⚡ 자동 매칭 방에 들어왔어요.' : `방 ${next.code}에 들어왔어요.`);
     return;
   }
   if (!room) return;

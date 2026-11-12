@@ -73,6 +73,14 @@ input, select {
 .member-list .kick { margin-left: auto; background: rgba(255,90,95,0.25); }
 .member-list .kick:hover { background: #ff5a5f; }
 .room-chat-slot .chat { position: static; height: 200px; margin-top: 12px; }
+/* 자동 매칭 대기실: 인원·카운트다운 안내 */
+.auto-status {
+  margin-top: 12px; padding: 10px 12px; border-radius: 12px; text-align: center; font-weight: 600;
+  background: rgba(58,134,255,0.18); border: 1px solid rgba(58,134,255,0.45);
+}
+.auto-status.go { background: rgba(255,159,28,0.2); border-color: rgba(255,191,105,0.6); }
+.auto-status .big { font-size: 1.4rem; color: #ffbf69; margin: 0 2px; }
+.room-list .tag.auto { background: #8a5cff; }
 
 /* ───────── 게임 화면 ───────── */
 #screen-game {
@@ -244,8 +252,9 @@ input, select {
   .chat-dock .chat:not(.open) .chat-tools label { display: none; }
   .chat-dock .chat.open { background: rgba(0,10,20,0.85); padding: 8px; border-radius: 12px; }
   .chat-dock .chat.open .chat-log-wrap { flex: none; height: 160px; }
-  #chat-expand { display: inline-block; }
-  .chat-head > span:first-child { display: none; }
+  /* 접기·펼치기는 게임 화면에서만. 대기실 채팅은 늘 펼쳐져 있다 */
+  .chat-dock #chat-expand { display: inline-block; }
+  .chat-dock .chat-head > span:first-child { display: none; }
   .ghost-hint { bottom: calc(34% + 8px); font-size: 0.8rem; width: 90%; }
   .banner { font-size: 1.8rem; top: 22%; }
 }

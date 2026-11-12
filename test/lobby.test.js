@@ -158,3 +158,96 @@ test('강퇴: 방장만 대기실에서, 내보내진 사람은 메뉴로 가고
   assert.equal(lobby.rooms.get(code).members.length, 2);
   lobby.rooms.get(code).game.stop(); // 타이머를 멈춰야 테스트 프로세스가 끝남
 });
+
+// ───────── 자동 매칭 ─────────
+test('자동 매칭: 혼자면 대기, 2명이 되면 카운트다운 뒤 저절로 시작', async () => {
+  const { lobby, join } = setup({ autoWaitMs: 60, autoFullWaitMs: 20 });
+  const a = join('A');
+  const b = join('B');
+  lobby.handle(a.user, { t: 'quickMatch' });
+  const code = a.user.room;
+  const room = lobby.rooms.get(code);
+  assert.equal(room.auto, true);
+  assert.equal(room.hostId, null);
+  assert.equal(room.settings.maxPlayers, CONFIG.autoMatchMaxPlayers);
+  assert.equal(a.last('room').autoStartIn, null); // 혼자서는 카운트다운 없음
+  lobby.handle(b.user, { t: 'quickMatch' });
+  assert.equal(b.user.room, code); // 같은 방으로 모임
+  const info = b.last('room');
+  assert.equal(info.auto, true);
+  assert.ok(info.autoStartIn > 0 && info.autoStartIn <= 60);
+  await sleep(120);
+  assert.ok(room.game, '카운트다운이 끝나면 게임이 시작돼야 함');
+  assert.ok(a.last('gameStart'));
+  // 게임 중인 자동 방에는 새로 매칭하지 않음 → 새 방
+  const c = join('C');
+  lobby.handle(c.user, { t: 'quickMatch' });
+  assert.notEqual(c.user.room, code);
+  // 판이 끝나고 남아 있으면 다음 판 카운트다운이 다시 걸림
+  room.game.stop();
+  lobby.endGame(room, []);
+  assert.equal(room.game, null);
+  assert.ok(a.last('room').autoStartIn > 0);
+  lobby.cancelAutoStart(room);
+  lobby.cancelAutoStart(lobby.rooms.get(c.user.room));
+});
+
+test('자동 매칭: 2명 미만으로 줄면 카운트다운 취소, 친구 방에는 넣지 않음', async () => {
+  const { lobby, join } = setup({ autoWaitMs: 60, autoFullWaitMs: 20 });
+  const host = join('H');
+  lobby.handle(host.user, { t: 'createRoom' }); // 일반 방
+  const a = join('A');
+  const b = join('B');
+  lobby.handle(a.user, { t: 'quickMatch' });
+  assert.notEqual(a.user.room, host.user.room);
+  lobby.handle(b.user, { t: 'quickMatch' });
+  const room = lobby.rooms.get(a.user.room);
+  assert.ok(room.autoTimer);
+  lobby.handle(b.user, { t: 'leaveRoom' });
+  assert.equal(room.autoTimer, null);
+  assert.equal(a.last('room').autoStartIn, null);
+  await sleep(100);
+  assert.equal(room.game, null);
+  // 마지막 사람이 나가면 방이 사라짐
+  lobby.handle(a.user, { t: 'leaveRoom' });
+  assert.equal(lobby.rooms.has(room.code), false);
+});
+
+test('자동 매칭: 정원이 차면 짧게 기다리고 시작, 다음 사람은 새 방', async () => {
+  const { lobby, join } = setup({ autoWaitMs: 5000, autoFullWaitMs: 30 });
+  const users = Array.from({ length: CONFIG.autoMatchMaxPlayers }, (_, i) => join(`P${i}`));
+  for (const u of users) lobby.handle(u.user, { t: 'quickMatch' });
+  const room = lobby.rooms.get(users[0].user.room);
+  assert.ok(users.every((u) => u.user.room === room.code));
+  assert.ok(users.at(-1).last('room').autoStartIn <= 30);
+  const extra = join('X');
+  lobby.handle(extra.user, { t: 'quickMatch' });
+  assert.notEqual(extra.user.room, room.code);
+  await sleep(80);
+  assert.ok(room.game);
+  assert.equal(room.game.players.length, CONFIG.autoMatchMaxPlayers);
+  room.game.stop();
+});
+
+test('자동 매칭 방에서는 방장 기능(설정·강퇴·봇·시작)이 막힘', () => {
+  const { lobby, join } = setup({ autoWaitMs: 5000 });
+  const a = join('A');
+  const b = join('B');
+  lobby.handle(a.user, { t: 'quickMatch' });
+  lobby.handle(b.user, { t: 'quickMatch' });
+  const room = lobby.rooms.get(a.user.room);
+  for (const u of [a, b]) {
+    lobby.handle(u.user, { t: 'settings', rounds: 1, maxPlayers: 30 });
+    lobby.handle(u.user, { t: 'kick', id: u === a ? b.user.id : a.user.id });
+    lobby.handle(u.user, { t: 'addBot' });
+    lobby.handle(u.user, { t: 'start' });
+  }
+  assert.equal(room.settings.rounds, CONFIG.defaultRounds);
+  assert.equal(room.settings.maxPlayers, CONFIG.autoMatchMaxPlayers);
+  assert.equal(room.members.length, 2);
+  assert.equal(room.game, null);
+  // 첫 사람이 나가도 방장이 생기지 않음
+  lobby.handle(a.user, { t: 'leaveRoom' });
+  assert.equal(room.hostId, null);
+  lobby.cancelAutoStart(room);
+});

@@ -3,7 +3,7 @@
 
 // 서버·클라이언트 메시지 형식 버전. 메시지 모양이 바뀌는 변경을 하면 1 올린다
 // → 배포 전에 열려 있던 탭은 접속할 때 'outdated'를 받고 새로고침한다.
-export const PROTOCOL = 1;
+export const PROTOCOL = 2;
 
 export const CONFIG = {
   pieceRadius: 1,
@@ -65,6 +65,11 @@ export const CONFIG = {
   defaultRounds: 3,
   minPlayers: 2,
   maxPlayers: 30,
+
+  // 자동 매칭: 메뉴의 "자동 매칭"으로 들어가는 방. 방장이 없고, 사람이 모이면 카운트다운 뒤 저절로 시작
+  autoMatchMaxPlayers: 8, // 자동 매칭 방 정원 (명)
+  autoMatchWaitMs: 15000, // 2명 이상 모인 뒤 더 기다리는 시간 (밀리초)
+  autoMatchFullWaitMs: 3000, // 정원이 차면 이만큼만 기다리고 시작 (밀리초)
 };
 
 export const ITEMS = {

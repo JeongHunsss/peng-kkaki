@@ -18,7 +18,7 @@
 shared/config.js   상수(CONFIG, ITEMS, QUICK_CHATS, PLAYER_COLORS)와 순수 계산식. 서버·클라이언트가 같이 씀
 shared/physics.js  simulate(): 2D 미끄러짐·충돌·낙하. 서버에서만 실행, 프레임을 클라이언트에 보냄
 server/index.js    HTTP 정적 파일 + /healthz + WebSocket. 메시지 크기 16KB, 연결당 초당 30개 제한
-server/lobby.js    접속(hello/토큰), 방 만들기·코드 참가·관전, 봇, 설정, 채팅, 신고
+server/lobby.js    접속(hello/토큰), 방 만들기·코드 참가·관전, 자동 매칭, 봇, 설정, 채팅, 신고
 server/game.js     Game 클래스. 판 → 턴(aim → launch → cleanup) → 점수. 모든 판정은 여기서(서버 권위)
 server/bot.js      혼자 연습용 봇의 조준·균열
 public/js/main.js  UI·WebSocket 클라이언트·입력. BASE_PATH는 location.pathname에서 계산(서브경로 배포)
