@@ -14,6 +14,7 @@ export class Lobby {
    * @param {{reportsFile?: string|null, graceMs?: number}} [opts]
    *  reportsFile: 신고를 한 줄씩 덧붙일 파일. null이면 저장하지 않음(테스트)
    *  graceMs: 접속이 끊긴 뒤 방에서 내보내기까지 기다리는 시간
+   *  autoWaitMs / autoFullWaitMs: 자동 매칭 방 카운트다운 (테스트에서 짧게)
    */
   constructor(opts = {}) {
     this.users = new Map(); // token → user
@@ -21,6 +22,8 @@ export class Lobby {
     this.rooms = new Map(); // code → room
     this.reportsFile = opts.reportsFile ?? null;
     this.graceMs = opts.graceMs ?? LOBBY_GRACE_MS;
+    this.autoWaitMs = opts.autoWaitMs ?? CONFIG.autoMatchWaitMs;
+    this.autoFullWaitMs = opts.autoFullWaitMs ?? CONFIG.autoMatchFullWaitMs;
     this.reportBytes = 0; // 신고 파일에 지금까지 쓴 양 (시작할 때 기존 크기를 더함)
     if (this.reportsFile) {
       try {
@@ -110,6 +113,9 @@ export class Lobby {
       case 'joinRoom':
         this.joinRoom(user, String(msg.code ?? '').toUpperCase());
         break;
+      case 'quickMatch':
+        this.quickMatch(user);
+        break;
       case 'leaveRoom':
         this.leaveRoom(user);
         this.toMenu(user);
@@ -170,6 +176,7 @@ export class Lobby {
         maxPlayers: room.settings.maxPlayers,
         inGame: !!room.game,
         spectators: room.spectators.length,
+        auto: !!room.auto,
       };
     });
   }
@@ -214,6 +221,55 @@ export class Lobby {
     this.sendRoom(room);
   }
 
+  // ───────── 자동 매칭 ─────────
+  // 빈자리가 있는 대기 중인 자동 방에 넣는다(사람이 가장 많은 방 먼저). 없으면 새로 만든다.
+  // 자동 방은 방장이 없어서(hostId=null) 설정·강퇴·봇·시작 같은 방장 기능이 모두 막힌다.
+  quickMatch(user) {
+    const current = user.room && this.rooms.get(user.room);
+    if (current?.auto && !current.game) return this.sendRoom(current);
+    if (current) this.leaveRoom(user);
+    let room = [...this.rooms.values()]
+      .filter((r) => r.auto && !r.game && r.members.length < r.settings.maxPlayers && !r.banned.has(user.token))
+      .sort((a, b) => b.members.length - a.members.length)[0];
+    if (!room) {
+      room = this.newRoom(null);
+      room.auto = true;
+      room.settings.maxPlayers = CONFIG.autoMatchMaxPlayers;
+    }
+    room.members.push(user.id);
+    user.room = room.code;
+    this.sendRoom(room);
+  }
+
+  // 접속 중인 사람이 2명 이상이면 카운트다운을 건다. 이미 걸려 있으면 사람이 더 와도 늦추지 않고,
+  // 정원이 차면 짧게 당긴다. 사람이 줄어 2명 미만이 되면 취소.
+  updateAutoStart(room) {
+    if (!room.auto) return;
+    const n = room.game ? 0 : room.members.filter((id) => this.present(id)).length;
+    if (n < CONFIG.minPlayers) return this.cancelAutoStart(room);
+    const wait = n >= room.settings.maxPlayers ? this.autoFullWaitMs : this.autoWaitMs;
+    const at = Date.now() + wait;
+    if (room.autoTimer && room.autoStartAt <= at) return;
+    this.cancelAutoStart(room);
+    room.autoStartAt = at;
+    room.autoTimer = setTimeout(() => this.autoStart(room), wait);
+    room.autoTimer.unref?.(); // 이 타이머 때문에 프로세스(테스트)가 안 끝나는 일이 없게
+  }
+
+  cancelAutoStart(room) {
+    clearTimeout(room.autoTimer);
+    room.autoTimer = null;
+    room.autoStartAt = 0;
+  }
+
+  autoStart(room) {
+    room.autoTimer = null;
+    room.autoStartAt = 0;
+    if (this.rooms.get(room.code) !== room || room.game) return;
+    if (room.members.filter((id) => this.present(id)).length >= CONFIG.minPlayers) this.startGame(room);
+    this.sendRoom(room);
+  }
+
   joinRoom(user, code) {
     const room = this.rooms.get(code);
     if (!room) return send(user, { t: 'error', msg: '방을 찾을 수 없어요.' });
@@ -245,13 +301,14 @@ export class Lobby {
     room.members = room.members.filter((id) => id !== user.id);
     const humans = [...room.members, ...room.spectators].filter((id) => !this.userById(id)?.bot);
     if (!humans.length) {
+      this.cancelAutoStart(room);
       room.game?.stop();
       for (const id of room.members) if (this.userById(id)?.bot) this.forget(this.userById(id));
       this.rooms.delete(room.code);
       this.broadcastRoomList();
       return;
     }
-    if (room.hostId === user.id) room.hostId = humans[0];
+    if (room.hostId === user.id && !room.auto) room.hostId = humans[0];
     this.sendRoom(room);
     const humanPlayers = room.game?.players.filter((p) => !this.userById(p.id)?.bot) ?? [];
     if (room.game && humanPlayers.every((p) => !this.isConnected(room, p.id))) {
@@ -384,12 +441,16 @@ export class Lobby {
 
   sendRoom(room) {
     if (!room) return;
+    this.updateAutoStart(room); // 방 인원·접속이 바뀌는 모든 곳이 여기를 지나므로 카운트다운도 여기서 맞춘다
     const info = {
       t: 'room',
       code: room.code,
       hostId: room.hostId,
       settings: room.settings,
       inGame: !!room.game,
+      auto: !!room.auto,
+      autoStartIn: room.autoTimer ? Math.max(0, room.autoStartAt - Date.now()) : null, // 자동 시작까지 남은 밀리초
+
       members: room.members.map((id) => {
         const u = this.userById(id);
         return { id, name: u?.name ?? '?', connected: !!u?.ws || !!u?.bot, bot: !!u?.bot };

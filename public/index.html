@@ -17,6 +17,11 @@
         <h1 class="logo">펭까기 <span>🐧</span></h1>
         <p class="sub">빙판 위 펭귄 밀치기 — 마지막까지 남아라!</p>
         <label class="field">닉네임 <input id="name-input" maxlength="12" placeholder="펭귄123" /></label>
+        <h3>자동 매칭</h3>
+        <p class="muted tip">아무나와 바로 한 판. 2명 이상 모이면 잠시 뒤 저절로 시작해요(최대 8명).</p>
+        <div class="row">
+          <button class="btn primary" id="btn-quick">⚡ 자동 매칭</button>
+        </div>
         <h3>혼자 연습 (봇과 대결)</h3>
         <p class="muted tip">처음이면 여기서 한 판 해 보세요. 당겼다 놓으면 발사, 세기 100%면 약 30칸이에요.</p>
         <div class="row">
@@ -51,7 +56,7 @@
     <section id="screen-room" class="screen card-screen hidden">
       <div class="card wide">
         <div class="room-head">
-          <h2>방 코드 <span id="room-code" class="code"></span></h2>
+          <h2><span id="room-title">방 코드</span> <span id="room-code" class="code"></span></h2>
           <button class="btn small" id="btn-copy-link">링크 복사</button>
         </div>
         <div class="room-body">
@@ -77,6 +82,7 @@
           </div>
         </div>
         <div id="room-chat-slot" class="room-chat-slot"></div>
+        <div id="auto-status" class="auto-status hidden"></div>
         <div class="row end">
           <button class="btn" id="btn-leave-room">나가기</button>
           <button class="btn primary" id="btn-start">시작</button>

@@ -146,7 +146,7 @@ test('방 최대 30명: 봇 29명 연습, 그 이상은 잘림', { timeout: 3000
     await new Promise((r) => ws.on('open', r));
     ws.send(JSON.stringify({ t: 'hello', name: '나' }));
     ws.send(JSON.stringify({ t: 'practice', bots: 50 }));
-    ws.send(JSON.stringify({ t: 'quickMatch', size: 2 })); // 빠른 매칭은 없어졌음
+    ws.send(JSON.stringify({ t: 'noSuchRequest' })); // 모르는 요청에는 에러로 답함
     const until = async (pred) => {
       for (let i = 0; i < 200; i++) {
         const m = inbox.find(pred);
@@ -161,7 +161,7 @@ test('방 최대 30명: 봇 29명 연습, 그 이상은 잘림', { timeout: 3000
     assert.equal(new Set(st.players.map((p) => p.color)).size, 30);
     assert.equal(new Set(st.players.map((p) => p.name)).size, 30);
     const err = await until((m) => m.t === 'error');
-    assert.match(err.msg, /quickMatch/);
+    assert.match(err.msg, /noSuchRequest/);
     ws.close();
   } finally {
     srv.kill();
