@@ -39,7 +39,8 @@ const importmapHash = (() => {
   try {
     const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf-8');
     const m = html.match(/<script type="importmap">([\s\S]*?)<\/script>/);
-    return m ? `'sha256-${crypto.createHash('sha256').update(m[1]).digest('base64')}'` : '';
+    // 브라우저는 HTML을 파싱할 때 CRLF를 LF로 바꾼 뒤 해시를 계산한다. Windows 체크아웃(CRLF)에서도 맞도록 같은 정규화를 한다
+    return m ? `'sha256-${crypto.createHash('sha256').update(m[1].replace(/\r\n?/g, '\n')).digest('base64')}'` : '';
   } catch {
     return '';
   }
