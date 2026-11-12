@@ -134,7 +134,10 @@
           <button id="chat-expand" class="btn tiny">펼치기</button>
         </span>
       </div>
-      <div id="chat-log" class="chat-log"></div>
+      <div class="chat-log-wrap">
+        <div id="chat-log" class="chat-log"></div>
+        <button type="button" id="chat-new" class="chat-new hidden">새 메시지 ↓</button>
+      </div>
       <div id="chat-quick" class="chat-quick"></div>
       <form id="chat-form" class="chat-form">
         <input id="chat-input" maxlength="60" placeholder="메시지 (60자)" autocomplete="off" />

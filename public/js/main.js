@@ -97,6 +97,7 @@ function onMessage(m) {
     case 'menu':
       room = null;
       game = null;
+      clearChat(); // 방을 나오면 그 방의 대화는 지운다
       resetGameUi();
       show('menu');
       if (pendingRoomJoin) {
@@ -109,6 +110,7 @@ function onMessage(m) {
       renderRoomList(m.rooms);
       break;
     case 'room':
+      syncChatRoom(m);
       room = m;
       renderRoom();
       if (!m.inGame && !game && !matchResultOpen) show('room');
@@ -178,9 +180,13 @@ function setChatMode() {
   const chat = $('#chat');
   const inGame = !$('#screen-game').classList.contains('hidden');
   const inRoom = !$('#screen-room').classList.contains('hidden');
-  if (inGame) $('#chat-dock').append(chat);
-  else if (inRoom) $('#room-chat-slot').append(chat);
-  chat.classList.toggle('hidden', !inGame && !inRoom);
+  const slot = inGame ? $('#chat-dock') : inRoom ? $('#room-chat-slot') : null;
+  // 이미 그 자리에 있으면 다시 붙이지 않는다 — DOM에서 떼었다 붙이면 로그 스크롤이 맨 위로 돌아간다
+  const moved = slot && chat.parentElement !== slot;
+  const wasHidden = chat.classList.contains('hidden');
+  if (moved) slot.append(chat);
+  chat.classList.toggle('hidden', !slot);
+  if (slot && (moved || wasHidden)) scrollChatToEnd(true); // 옮기거나 다시 보일 때는 맨 아래부터
   const free = room?.settings?.freeChat !== false;
   $('#chat-input').disabled = !free;
   $('#chat-input').placeholder = free ? '메시지 (60자)' : '빠른 채팅만 가능';
@@ -887,9 +893,9 @@ function onChat(m) {
   if (muted.has(m.from) || $('#chat-off').checked) return;
   const text = filterText(m.text);
   const line = document.createElement('div');
-  line.className = `msg ${m.channel === 'ghost' ? 'ghost' : ''}`;
-  line.innerHTML = `${m.channel === 'ghost' ? '👻 ' : ''}<b>${esc(m.name)}</b>: ${esc(text)}`;
-  appendLog(line);
+  line.className = `msg ${m.channel === 'ghost' ? 'ghost' : ''} ${m.from === me.id ? 'me' : ''}`;
+  line.innerHTML = `${m.channel === 'ghost' ? '👻 ' : ''}<b>${esc(m.name)}</b> ${esc(text)}`;
+  appendLog(line, true);
   if (m.bubble) scene.showBubble(m.from, text);
 }
 
@@ -900,29 +906,114 @@ function sysChat(text) {
   appendLog(line);
 }
 
-function appendLog(line) {
+// 채팅 로그 스크롤: 맨 아래를 보고 있을 때만 따라 내려가고, 위로 올려 읽는 중이면 "새 메시지" 버튼만 띄운다
+let chatStick = true; // 로그가 맨 아래에 붙어 있는지
+let chatUnread = 0; // 안 본 메시지 수 (위로 올렸거나 접혀 있는 동안)
+let chatRoomCode = null; // 지금 로그가 속한 방
+
+function appendLog(line, countUnread = false) {
   const log = $('#chat-log');
   log.append(line);
   while (log.children.length > 100) log.firstChild.remove();
+  // 세로 화면에서 접혀 있으면(펼치기 버튼이 보이면) 미리보기만 보이는 상태
+  const collapsed = $('#chat-expand').offsetParent !== null && !$('#chat').classList.contains('open');
+  if (chatStick) log.scrollTop = log.scrollHeight;
+  if (countUnread && (collapsed || !chatStick)) {
+    chatUnread++;
+    renderChatUnread();
+  }
+}
+
+function scrollChatToEnd(force = false) {
+  if (!force && !chatStick) return;
+  const log = $('#chat-log');
   log.scrollTop = log.scrollHeight;
+  chatStick = true;
+  chatUnread = 0;
+  renderChatUnread();
+}
+
+function renderChatUnread() {
+  const open = $('#chat').classList.contains('open');
+  const n = chatUnread > 99 ? '99+' : String(chatUnread);
+  $('#chat-expand').textContent = open ? '접기' : chatUnread ? `펼치기 (${n})` : '펼치기';
+  $('#chat-new').classList.toggle('hidden', !chatUnread || chatStick);
+  $('#chat-new').textContent = `새 메시지 ${n}개 ↓`;
+}
+
+function clearChat() {
+  $('#chat-log').replaceChildren();
+  chatRoomCode = null;
+  chatStick = true;
+  chatUnread = 0;
+  renderChatUnread();
+}
+
+// 방이 바뀌면 로그를 비우고, 같은 방이면 들어오고 나간 사람을 알린다
+function syncChatRoom(next) {
+  if (next.code !== chatRoomCode) {
+    clearChat();
+    chatRoomCode = next.code;
+    sysChat(`방 ${next.code}에 들어왔어요.`);
+    return;
+  }
+  if (!room) return;
+  const people = (r) => new Map([...r.members, ...r.spectators].map((p) => [p.id, p]));
+  const before = people(room);
+  const after = people(next);
+  for (const [id, p] of after) if (!before.has(id) && id !== me.id) sysChat(`${p.bot ? '🤖 ' : ''}${p.name}님이 들어왔어요.`);
+  for (const [id, p] of before) if (!after.has(id) && id !== me.id) sysChat(`${p.bot ? '🤖 ' : ''}${p.name}님이 나갔어요.`);
+}
+
+$('#chat-log').addEventListener('scroll', () => {
+  const log = $('#chat-log');
+  chatStick = log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+  if (chatStick && chatUnread) {
+    chatUnread = 0;
+    renderChatUnread();
+  }
+});
+$('#chat-new').onclick = () => scrollChatToEnd(true);
+
+// 서버와 같은 규칙(1초 1개, 같은 말 연속 금지)을 먼저 확인해서, 거부될 메시지로 입력창이 비워지지 않게 한다
+let lastChatSentAt = 0;
+let lastChatSentText = '';
+function trySendChat(text, msg) {
+  const now = Date.now();
+  const why = now - lastChatSentAt < CONFIG.chatMinIntervalMs ? '채팅은 1초에 1개만 보낼 수 있어요.'
+    : text === lastChatSentText ? '같은 메시지를 연속으로 보낼 수 없어요.' : '';
+  if (why) {
+    toast(why);
+    return false;
+  }
+  lastChatSentAt = now;
+  lastChatSentText = text;
+  send(msg);
+  return true;
 }
 
 $('#chat-quick').innerHTML = QUICK_CHATS.map((q, i) => `<button type="button" data-q="${i}">${q}</button>`).join('');
 $('#chat-quick').addEventListener('click', (e) => {
   const b = e.target.closest('[data-q]');
-  if (b) send({ t: 'chat', quick: Number(b.dataset.q) });
+  if (b) trySendChat(QUICK_CHATS[b.dataset.q], { t: 'chat', quick: Number(b.dataset.q) });
 });
 $('#chat-form').addEventListener('submit', (e) => {
   e.preventDefault();
-  const v = $('#chat-input').value.trim();
+  const input = $('#chat-input');
+  const v = input.value.trim();
   if (!v) return;
-  send({ t: 'chat', text: v });
-  $('#chat-input').value = '';
+  if (!trySendChat(v, { t: 'chat', text: v })) return;
+  input.value = '';
+  input.focus(); // 전송 버튼을 눌러도 바로 다음 말을 이어 칠 수 있게
+});
+$('#chat-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') e.target.blur(); // 채팅에서 빠져나와 조준 단축키(Enter/Space)를 다시 쓸 수 있게
 });
 $('#chat-expand').onclick = () => {
   const c = $('#chat');
   c.classList.toggle('open');
-  $('#chat-expand').textContent = c.classList.contains('open') ? '접기' : '펼치기';
+  if (c.classList.contains('open')) scrollChatToEnd(true);
+  else renderChatUnread();
 };
 $('#chat-off').onchange = (e) => {
   $('#chat-log').style.visibility = e.target.checked ? 'hidden' : '';
