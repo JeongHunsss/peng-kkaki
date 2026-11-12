@@ -1,6 +1,10 @@
 // 테스트하면서 조정하는 값(규칙서 "수치 요약")을 한곳에 모아둔다.
 // 서버와 클라이언트가 같은 파일을 import 한다. 길이 단위는 말 반지름 = 1.
 
+// 서버·클라이언트 메시지 형식 버전. 메시지 모양이 바뀌는 변경을 하면 1 올린다
+// → 배포 전에 열려 있던 탭은 접속할 때 'outdated'를 받고 새로고침한다.
+export const PROTOCOL = 1;
+
 export const CONFIG = {
   pieceRadius: 1,
   boardRadiusBase: 8,
@@ -31,6 +35,11 @@ export const CONFIG = {
 
   crackRadius: 1.2,
   crackPowerCap: 0.5,
+  // 한 턴에 공개되는 균열은 최대 생존자 수만큼(최소 1). 유령이 많아져도 판이 균열로 덮이지 않게. 먼저 놓은 순
+  crackMaxPerAlive: 1,
+
+  // 연속으로 이 턴 수만큼 입력이 없으면(끊김·시간 초과) 자리를 비운 것으로 보고 탈락. 봇은 해당 없음
+  afkTurns: 2,
 
   // 지구 온난화 이벤트: 모두 조준을 마친 뒤 출발 직전에 무작위 위치에 구멍. 판이 끝날 때까지 남음
   warmingChance: 0.1, // 턴마다 확률

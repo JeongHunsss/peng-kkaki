@@ -22,7 +22,9 @@ npm test           # 규칙/물리 단위 테스트 + 서버 E2E
 | 시점 좌우 회전 | 우클릭 드래그 좌우, Q/E, ⟲⟳ 버튼 | 판 위 스와이프 좌우, ⟲⟳ 버튼 |
 | 시점 상하 (앞 보기 ↔ 위에서 보기) | 우클릭 드래그 위아래, W/S·↑/↓, ▲▼ 버튼 | 판 위 스와이프 위아래, ▲▼ 버튼 |
 | 확정 | 확정 버튼 / Enter / Space | 확정 버튼 |
-| 유령 균열 | 판 위 아무 곳 클릭 | 판 위 아무 곳 탭 |
+| 유령 균열 | 판 위 아무 곳 클릭 (한 턴에 생존자 수만큼, 먼저 놓은 순) | 판 위 아무 곳 탭 |
+| 소리 켜기/끄기 | 왼쪽 위 🔊 버튼 | 같음 |
+| 내보내기(강퇴) | 대기실 참가자 옆 '내보내기' (방장만) | 같음 |
 
 ## 배포
 
@@ -31,7 +33,7 @@ npm test           # 규칙/물리 단위 테스트 + 서버 E2E
 **Docker**
 ```bash
 docker build -t peng-kkaki .
-docker run -d -p 3000:3000 --restart unless-stopped --name peng-kkaki peng-kkaki
+docker run -d -p 3000:3000 --restart unless-stopped --name peng-kkaki \n  -v ~/peng-kkaki-data:/app/data \n  -e ALLOWED_ORIGINS=https://t1516.p.ssafy.io \n  peng-kkaki
 ```
 
 **Docker 없이 (VM 등)**
@@ -49,11 +51,16 @@ PORT=3000 node server/index.js     # pm2/systemd 등으로 상시 실행
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "upgrade";
     proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;  # IP당 연결 제한에 씀
     proxy_read_timeout 120s;
   }
   ```
-- 환경변수: `PORT`(기본 3000), `HOST`(기본: 모든 IPv4·IPv6 주소), `AIM_TIME_MS`(조준 시간 덮어쓰기, 테스트용), `WARMING_CHANCE`(지구 온난화 확률 덮어쓰기, 테스트용 — 기본 0.1), `BLIZZARD_CHANCE`(눈보라 확률 덮어쓰기, 테스트용 — 기본 0.1), `DEBUG_WS=1`(수신 메시지 로그)
-- 신고는 서버 작업 폴더의 `reports.log`에 쌓입니다(컨테이너면 재생성 시 사라짐).
+  같은 IP의 연결 수를 nginx에서 먼저 막으려면 `http` 블록에 `limit_conn_zone $binary_remote_addr zone=pengkkaki:1m;`, 위 location에 `limit_conn pengkkaki 30;`을 둡니다.
+- 환경변수
+  - 운영: `PORT`(기본 3000), `HOST`(기본: 모든 IPv4·IPv6 주소), `ALLOWED_ORIGINS`(쉼표 구분 허용 Origin. 비우면 검사 안 함 — 운영에서는 꼭 설정), `MAX_CONN_PER_IP`(IP당 동시 접속 상한, 기본 20), `TRUST_PROXY=0`(X-Forwarded-For 무시 — nginx 없이 직접 노출할 때), `REPORTS_FILE`(신고 파일, 기본 `data/reports.log`)
+  - 테스트용: `AIM_TIME_MS`(조준 시간), `WARMING_CHANCE`·`BLIZZARD_CHANCE`(이벤트 확률 0~1, 기본 0.1), `DEBUG_WS=1`(수신 메시지 로그)
+- 신고는 `data/reports.log`에 한 줄씩(JSON) 쌓입니다. Docker에서는 위 명령처럼 `/app/data`를 볼륨으로 붙여야 재시작해도 남습니다. 같은 방 사람만, 사용자당 10초에 한 번, 파일 10MB까지.
+- 배포 후 이미 열려 있던 탭은 접속할 때 새 버전 안내를 받고 자동으로 새로고침합니다(`shared/config.js`의 `PROTOCOL`). 메시지 형식을 바꾸는 변경을 하면 이 숫자를 올리세요.
 
 ## 구조
 

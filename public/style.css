@@ -69,7 +69,9 @@ input, select {
 .room-body { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 @media (max-width: 600px) { .room-body { grid-template-columns: 1fr; } }
 .member-list { list-style: none; padding: 0; margin: 0; }
-.member-list li { padding: 6px 8px; border-radius: 8px; background: rgba(0,0,0,0.2); margin: 4px 0; }
+.member-list li { padding: 6px 8px; border-radius: 8px; background: rgba(0,0,0,0.2); margin: 4px 0; display: flex; align-items: center; gap: 6px; }
+.member-list .kick { margin-left: auto; background: rgba(255,90,95,0.25); }
+.member-list .kick:hover { background: #ff5a5f; }
 .room-chat-slot .chat { position: static; height: 200px; margin-top: 12px; }
 
 /* ───────── 게임 화면 ───────── */
@@ -112,6 +114,8 @@ input, select {
 /* 결과창(overlay)이 떠 있어도 누를 수 있게 가장 위 */
 .exit-btn { position: absolute; top: 10px; left: 10px; z-index: 7; background: rgba(0,0,0,0.55); }
 .exit-btn:hover:not(:disabled) { background: #ff5a5f; }
+.sound-btn { position: absolute; top: 10px; left: 104px; z-index: 7; background: rgba(0,0,0,0.55); }
+.tip { font-size: 0.8rem; margin: -4px 0 6px; }
 .cam-ctrl {
   position: absolute; top: 52px; left: 10px; display: flex; flex-direction: column; gap: 4px;
   align-items: flex-start; z-index: 3;
@@ -199,6 +203,7 @@ input, select {
   .pl .acts { display: none; }
   #minimap { width: 96px; height: 96px; top: 6px; right: 6px; }
   .exit-btn { top: 6px; left: 6px; }
+  .sound-btn { top: 6px; left: 100px; }
   .cam-ctrl { top: 44px; left: 6px; }
   .cam-rot span { display: none; }
   .timer { font-size: 1.6rem; }

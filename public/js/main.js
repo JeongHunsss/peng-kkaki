@@ -1,5 +1,6 @@
-import { CONFIG, ITEMS, QUICK_CHATS, clonePosition, startBoardRadius } from '../shared/config.js';
+import { CONFIG, ITEMS, QUICK_CHATS, PROTOCOL, clonePosition, startBoardRadius } from '../shared/config.js';
 import { GameScene } from './scene.js';
+import { sound } from './sound.js';
 
 const $ = (s) => document.querySelector(s);
 // 게임이 올라간 경로 (예: '/' 또는 '/pengkkaki/'). nginx 하위 경로 배포 지원
@@ -23,6 +24,8 @@ let lastTurn = 0;
 let myCrackPlaced = false; // 유령: 이번 턴에 균열을 놓았는지
 let wasAlive = false; // 유령이 된 순간을 알기 위해
 let matchResultOpen = false; // 최종 결과창을 닫기 전까지 화면 유지
+let practiceTip = false; // 혼자 연습 첫 턴에만 조작 안내 배너
+let lastTickSec = -1; // 조준 마지막 3초 소리
 
 function newAim() {
   return { main: { angle: 0, power: 0 }, clone: { angle: 0, power: 0 }, target: 'main', useItem: false, confirmed: false };
@@ -31,12 +34,21 @@ function newAim() {
 // ───────── 네트워크 ─────────
 function connect() {
   ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${BASE_PATH}`);
-  ws.onopen = () => send({ t: 'hello', name: me.name, token: me.token });
+  ws.onopen = () => send({ t: 'hello', name: me.name, token: me.token, proto: PROTOCOL });
   ws.onmessage = (ev) => onMessage(JSON.parse(ev.data));
   ws.onclose = (ev) => {
     if (ev.code === 4000) {
       // 다른 창(탭 복제 등)이 이 접속을 이어받음 → 서로 끊어내는 무한 반복을 막기 위해 재접속하지 않음
       showReplaced();
+      return;
+    }
+    if (ev.code === 4003) {
+      toast('이 주소에서는 접속할 수 없어요. 공식 주소로 열어 주세요.');
+      return; // 서버가 거부한 것이라 다시 시도해도 같음
+    }
+    if (ev.code === 4029) {
+      toast('같은 네트워크에서 접속이 너무 많아요. 잠시 뒤 다시 시도합니다…');
+      setTimeout(connect, 10000);
       return;
     }
     toast('서버 연결이 끊겼어요. 다시 연결 중…');
@@ -74,6 +86,14 @@ function onMessage(m) {
       localStorage.setItem('pk_name', m.name);
       $('#name-input').value = m.name;
       break;
+    case 'outdated':
+      // 서버가 새 버전: 한 번만 자동 새로고침, 그래도 같으면(캐시 등) 직접 하라고 안내
+      if (Date.now() - Number(sessionStorage.getItem('pk_reloaded') || 0) > 30_000) {
+        sessionStorage.setItem('pk_reloaded', String(Date.now()));
+        toast('새 버전이 있어요. 새로고침합니다…');
+        setTimeout(() => location.reload(), 800);
+      } else toast('새 버전이 있어요. 새로고침(F5)해 주세요.');
+      break;
     case 'menu':
       room = null;
       game = null;
@@ -109,6 +129,10 @@ function onMessage(m) {
       show('game');
       $('#overlay').classList.add('hidden');
       sysChat('게임 시작!');
+      if (m.practice) {
+        sysChat('🐧 처음이면: 화면을 당겼다 놓으면 반대 방향으로 미끄러져요. 세기 100%면 약 30칸, 판 반지름은 28칸이에요. 끝까지 당기면 혼자서도 밖으로 나갈 수 있으니 조심!');
+        practiceTip = true;
+      }
       break;
     case 'state':
       applyState(m);
@@ -204,6 +228,12 @@ function renderRoomList(rooms) {
     .join('');
 }
 
+$('#room-members').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-kick]');
+  if (!b) return;
+  const m = room?.members.find((x) => x.id === b.dataset.kick);
+  if (m && confirm(`${m.name} 님을 내보낼까요?\n이 방에는 다시 들어올 수 없어요.`)) send({ t: 'kick', id: m.id });
+});
 $('#btn-leave-room').onclick = () => send({ t: 'leaveRoom' });
 $('#btn-start').onclick = () => send({ t: 'start' });
 $('#btn-copy-link').onclick = async () => {
@@ -225,8 +255,10 @@ function renderRoom() {
   const isHost = room.hostId === me.id;
   $('#room-code').textContent = room.code;
   $('#room-count').textContent = `${room.members.length}/${room.settings.maxPlayers}`;
+  const kickable = (m) => isHost && m.id !== me.id && !m.bot;
   $('#room-members').innerHTML = room.members
-    .map((m) => `<li>${m.id === room.hostId ? '👑 ' : ''}${m.bot ? '🤖 ' : ''}${esc(m.name)}${m.id === me.id ? ' (나)' : ''}${m.connected ? '' : ' 📴'}</li>`)
+    .map((m) => `<li>${m.id === room.hostId ? '👑 ' : ''}${m.bot ? '🤖 ' : ''}${esc(m.name)}${m.id === me.id ? ' (나)' : ''}${m.connected ? '' : ' 📴'}`
+      + (kickable(m) ? `<button class="btn tiny kick" data-kick="${m.id}" title="내보내기 (다시 못 들어와요)">내보내기</button>` : '') + '</li>')
     .join('');
   $('#room-spectators').textContent = room.spectators.length ? `관전: ${room.spectators.map((s) => s.name).join(', ')}` : '';
   const sel = $('#set-max');
@@ -267,12 +299,18 @@ function applyState(s) {
   if (mine && wasAlive && !mine.alive) {
     banner('👻 유령이 되었어요!<br><small>판 위 아무 곳에나 균열을 놓아 산 사람을 방해할 수 있어요</small>', 3200);
     sysChat('👻 유령이 되었어요. 조준 단계마다 판 위 아무 곳이나 눌러 균열을 놓을 수 있어요. 균열 위에 멈춘 펭귄은 다음 턴 세기가 최대 50%가 돼요.');
+    sound.play('ghost');
   }
   wasAlive = !!mine?.alive;
   if (s.phase === 'aim' && s.turn !== lastTurn) {
     lastTurn = s.turn;
     Object.assign(aim, newAim());
     if (s.turn === 1 && mine?.alive) scene.faceCenter(mine.x, mine.y); // 판 시작은 중심을 바라봄
+    if (s.myAfkWarn) banner('⚠️ 지난 턴에 입력이 없었어요<br><small>이번에도 없으면 자리를 비운 것으로 보고 탈락해요</small>', 3000);
+    else if (practiceTip && s.turn === 1 && mine?.alive) {
+      setTimeout(() => banner('화면을 당겼다 놓으면 발사!<br><small>세기 100% = 약 30칸 · 판 반지름 28칸 · 판 밖은 탈락</small>', 4000), 1600);
+      practiceTip = false;
+    }
   }
   deadline = performance.now() + s.timeLeftMs;
   aim.confirmed = !!mine?.confirmed;
@@ -309,8 +347,9 @@ function updateAimUi() {
   else if (ghost && myCrackPlaced) {
     hint.innerHTML = '✔ <b>균열을 놓았어요</b> — 발사 때 모두에게 공개돼요<span class="sub">다른 곳을 누르면 위치를 옮길 수 있어요</span>';
   } else if (ghost) {
+    const quota = s ? ` · 이번 턴 균열 ${s.crackCount}/${s.crackMax} (생존자 수만큼, 먼저 놓은 순)` : '';
     hint.innerHTML = '👻 <b>유령도 판에 영향을 줄 수 있어요!</b> 판 위 아무 곳이나 눌러 균열을 놓으세요'
-      + '<span class="sub">균열 위에 멈춘 펭귄은 다음 턴 세기가 최대 50%로 제한돼요 (턴마다 1개)</span>';
+      + `<span class="sub">균열 위에 멈춘 펭귄은 다음 턴 세기가 최대 50%로 제한돼요${quota}</span>`;
   }
   hint.classList.toggle('done', ghost && myCrackPlaced);
   hint.classList.toggle('hidden', !(ghost || (!mine && s)));
@@ -557,6 +596,7 @@ function playTurn(res) {
     }
     const falls = res.falls.filter((f) => !f.id.includes('#')).map((f) => f.id);
     for (const id of [...falls, ...res.meltOut]) sysChat(`${names[id]} 탈락!`);
+    for (const id of res.afkOut ?? []) sysChat(`💤 ${names[id]}이(가) 자리를 비워 탈락했어요.`);
     for (const p of res.pickups) if (p.id === me.id && p.gained) toast('아이템을 획득했어요! 다음 턴부터 쓸 수 있어요.');
     if (res.capped.includes(me.id)) toast('🧊 유령 균열 위에 멈췄어요. 다음 턴 세기 최대 50%!');
     flushQueue();
@@ -572,6 +612,7 @@ function nameOf(id) {
 }
 
 function showRoundEnd(m) {
+  sound.play('fanfare');
   const ids = Object.keys(m.ranks).sort((a, b) => m.ranks[a] - m.ranks[b]);
   const rows = ids
     .map((id) => `<tr><td>${m.ranks[id]}위</td><td>${esc(nameOf(id))}</td><td>${m.duel ? `${m.wins[id]}승` : `${m.scores[id]}점`}</td></tr>`)
@@ -738,8 +779,11 @@ function tickHud() {
   const left = Math.max(0, deadline - performance.now());
   const t = $('#timer');
   if (s.phase === 'aim' && !scene.playback) {
-    t.textContent = Math.ceil(left / 1000);
+    const sec = Math.ceil(left / 1000);
+    t.textContent = sec;
     t.classList.toggle('urgent', left < 3000);
+    if (left < 3000 && left > 0 && sec !== lastTickSec && canAim()) sound.play('tick');
+    lastTickSec = sec;
   } else t.textContent = '';
   $('#round-info').textContent = s.duel
     ? `${s.round}판째 (${Math.ceil(s.totalRounds / 2)}선승) · ${s.turn}턴`
@@ -888,8 +932,22 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
+// ───────── 소리 ─────────
+function renderSoundBtn() {
+  $('#btn-sound').textContent = sound.muted ? '🔇' : '🔊';
+  $('#btn-sound').title = sound.muted ? '소리 켜기' : '소리 끄기';
+}
+$('#btn-sound').onclick = () => {
+  sound.setMuted(!sound.muted);
+  renderSoundBtn();
+  sound.play('click');
+};
+renderSoundBtn();
+for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, () => sound.unlock(), { once: true });
+
 // ───────── 시작 ─────────
 scene = new GameScene($('#three'), $('#labels'));
+scene.onEvent = (name, data) => sound.play(name, data);
 if (location.search.includes('debug')) window.__peng = { scene }; // 자동 테스트용
 initInput();
 $('#name-input').value = me.name;

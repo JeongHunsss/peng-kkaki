@@ -6,19 +6,36 @@ import { Game } from './game.js';
 import { BOT_NAMES } from './bot.js';
 
 const LOBBY_GRACE_MS = 15_000;
+const REPORT_INTERVAL_MS = 10_000; // 사용자당 신고 간격
+const REPORT_MAX_BYTES = 10 * 1024 * 1024; // 신고 파일 상한 (넘으면 저장하지 않고 경고만)
 
 export class Lobby {
-  constructor() {
+  /**
+   * @param {{reportsFile?: string|null, graceMs?: number}} [opts]
+   *  reportsFile: 신고를 한 줄씩 덧붙일 파일. null이면 저장하지 않음(테스트)
+   *  graceMs: 접속이 끊긴 뒤 방에서 내보내기까지 기다리는 시간
+   */
+  constructor(opts = {}) {
     this.users = new Map(); // token → user
     this.byId = new Map(); // id → user
     this.rooms = new Map(); // code → room
+    this.reportsFile = opts.reportsFile ?? null;
+    this.graceMs = opts.graceMs ?? LOBBY_GRACE_MS;
+    this.reportBytes = 0; // 신고 파일에 지금까지 쓴 양 (시작할 때 기존 크기를 더함)
+    if (this.reportsFile) {
+      try {
+        this.reportBytes = fs.statSync(this.reportsFile).size;
+      } catch {
+        /* 아직 파일 없음 */
+      }
+    }
   }
 
   // ───────── 접속 ─────────
   hello(ws, name, token) {
     let user = this.users.get(token);
     if (!user) {
-      user = { id: crypto.randomUUID().slice(0, 8), token, name: '', ws: null, room: null, lastChat: 0, lastText: '' };
+      user = { id: crypto.randomUUID().slice(0, 8), token, name: '', ws: null, room: null, lastChat: 0, lastText: '', lastReport: 0, disconnectedAt: 0 };
       this.users.set(token, user);
       this.byId.set(user.id, user);
     }
@@ -43,6 +60,7 @@ export class Lobby {
   disconnect(user, ws) {
     if (user.ws !== ws) return;
     user.ws = null;
+    user.disconnectedAt = Date.now();
     const room = user.room && this.rooms.get(user.room);
     if (room?.game) {
       room.game.onDisconnect(user.id);
@@ -55,8 +73,22 @@ export class Lobby {
       if (r?.game) return;
       if (r) this.leaveRoom(user);
       this.forget(user);
-    }, LOBBY_GRACE_MS);
+    }, this.graceMs);
     if (room) this.sendRoom(room);
+  }
+
+  // 게임이 끝나거나 멈춘 뒤: 게임 중에 끊겨서 재접속 유예가 이미 지난 사람을 방에서 빼고 기록 삭제.
+  // (유예 타이머는 게임 중이면 정리를 건너뛰므로 여기서 마저 해 줘야 방이 영원히 남지 않음)
+  // 아직 유예 중인 사람은 타이머가 알아서 처리한다.
+  purgeDisconnected(room) {
+    const now = Date.now();
+    for (const id of [...room.members, ...room.spectators]) {
+      const u = this.userById(id);
+      if (!u || u.bot || u.ws) continue;
+      if (now - u.disconnectedAt < this.graceMs) continue;
+      this.leaveRoom(u);
+      this.forget(u);
+    }
   }
 
   forget(user) {
@@ -99,6 +131,9 @@ export class Lobby {
         break;
       case 'removeBot':
         this.removeBot(user);
+        break;
+      case 'kick':
+        this.kick(user, String(msg.id ?? ''));
         break;
       case 'aim':
         this.gameOf(user)?.onAim(user.id, msg);
@@ -165,6 +200,7 @@ export class Lobby {
       spectators: [],
       settings: { maxPlayers: CONFIG.maxPlayers, rounds: CONFIG.defaultRounds, items: true, freeChat: true },
       game: null,
+      banned: new Set(), // 강퇴된 사람의 토큰. 방이 사라지면 같이 사라짐
     };
     this.rooms.set(code, room);
     return room;
@@ -181,6 +217,7 @@ export class Lobby {
   joinRoom(user, code) {
     const room = this.rooms.get(code);
     if (!room) return send(user, { t: 'error', msg: '방을 찾을 수 없어요.' });
+    if (room.banned.has(user.token)) return send(user, { t: 'error', msg: '이 방에서 내보내져서 다시 들어갈 수 없어요.' });
     if (user.room === code) return this.sendRoom(room);
     if (user.room) this.leaveRoom(user);
     if (room.game) {
@@ -220,7 +257,22 @@ export class Lobby {
     if (room.game && humanPlayers.every((p) => !this.isConnected(room, p.id))) {
       room.game.stop();
       room.game = null;
+      this.purgeDisconnected(room);
+      if (this.rooms.has(room.code)) this.sendRoom(room);
     }
+  }
+
+  // 방장이 대기실에서 사람을 내보냄. 내보내진 사람은 같은 방 코드로 다시 못 들어옴 (봇은 removeBot)
+  kick(user, id) {
+    const room = user.room && this.rooms.get(user.room);
+    if (!room || room.hostId !== user.id || room.game) return;
+    const target = this.userById(id);
+    if (!target || target.bot || target.id === user.id || target.room !== room.code) return;
+    room.banned.add(target.token);
+    this.leaveRoom(target);
+    send(target, { t: 'notice', msg: '방장이 방에서 내보냈어요.' });
+    this.toMenu(target);
+    if (this.rooms.has(room.code)) this.sendRoom(room);
   }
 
   // ───────── 봇 (혼자 테스트용) ─────────
@@ -260,6 +312,7 @@ export class Lobby {
     const n = clampInt(bots, 1, CONFIG.maxPlayers - 1);
     this.createRoom(user);
     const room = this.rooms.get(user.room);
+    room.practice = true; // 처음 하는 사람 안내용
     for (let i = 0; i < n; i++) this.newBot(room);
     this.startGame(room);
     this.sendRoom(room);
@@ -302,7 +355,7 @@ export class Lobby {
       isConnected: (id) => this.isConnected(room, id),
       onEnd: (standings) => this.endGame(room, standings),
     });
-    this.roomBroadcast(room, { t: 'gameStart', players, settings: room.settings, duel: players.length === 2 });
+    this.roomBroadcast(room, { t: 'gameStart', players, settings: room.settings, duel: players.length === 2, practice: !!room.practice });
     room.game.start();
   }
 
@@ -313,14 +366,7 @@ export class Lobby {
     for (const id of room.spectators) if (room.members.length < room.settings.maxPlayers) room.members.push(id);
     room.spectators = room.spectators.filter((id) => !room.members.includes(id));
     room.members = room.members.filter((id) => this.userById(id)?.room === room.code); // 봇도 room 코드를 가짐
-    // 게임 중에 끊긴 사람 정리
-    for (const id of [...room.members]) {
-      const u = this.userById(id);
-      if (u && !u.bot && !u.ws) {
-        this.leaveRoom(u);
-        this.forget(u);
-      }
-    }
+    this.purgeDisconnected(room);
     if (this.rooms.has(room.code)) this.sendRoom(room);
   }
 
@@ -400,9 +446,30 @@ export class Lobby {
     this.roomBroadcast(room, out);
   }
 
+  // 신고: 같은 방 사람만, 10초에 한 번, 파일 크기 상한 안에서 한 줄씩 저장
   report(user, target, reason) {
-    const line = JSON.stringify({ at: new Date().toISOString(), room: user.room, reporter: user.id, target, reason: reason.slice(0, 200) });
-    fs.appendFile('reports.log', line + '\n', () => {});
+    const room = user.room && this.rooms.get(user.room);
+    if (!room) return send(user, { t: 'error', msg: '방 안에서만 신고할 수 있어요.' });
+    const inRoom = room.members.includes(target) || room.spectators.includes(target) || !!room.game?.players.some((p) => p.id === target);
+    if (!inRoom || target === user.id) return send(user, { t: 'error', msg: '신고할 수 없는 대상이에요.' });
+    const now = Date.now();
+    if (now - user.lastReport < REPORT_INTERVAL_MS) return send(user, { t: 'error', msg: '신고는 10초에 한 번만 할 수 있어요.' });
+    user.lastReport = now;
+    const line = JSON.stringify({
+      at: new Date().toISOString(), room: room.code, reporter: user.id, reporterName: user.name,
+      target, targetName: this.userById(target)?.name ?? null, reason: reason.slice(0, 200),
+    }) + '\n';
+    if (this.reportsFile) {
+      const bytes = Buffer.byteLength(line);
+      if (this.reportBytes + bytes > REPORT_MAX_BYTES) {
+        console.error(`신고 파일이 상한(${REPORT_MAX_BYTES}바이트)에 닿아 저장하지 않음: ${this.reportsFile}`);
+      } else {
+        this.reportBytes += bytes;
+        fs.appendFile(this.reportsFile, line, (err) => {
+          if (err) console.error('신고 저장 실패', this.reportsFile, err.message);
+        });
+      }
+    }
     send(user, { t: 'notice', msg: '신고가 접수됐어요.' });
   }
 

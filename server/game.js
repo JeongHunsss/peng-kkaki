@@ -78,6 +78,7 @@ export class Game {
         item: null,
         itemTurn: -1,
         capped: false,
+        autoTurns: 0, // 연속으로 입력 없이 지나간 턴 수
       };
     });
     this.startAim();
@@ -90,6 +91,7 @@ export class Game {
     r.phase = 'aim';
     r.inputs = {};
     r.cracks = {};
+    r.crackSeq = 0;
     r.deadline = Date.now() + CONFIG.aimTimeMs;
     this.broadcastState();
     clearTimeout(this.timer);
@@ -144,6 +146,7 @@ export class Game {
       input.clone = { angle: num(data.clone.angle), power: clamp01(num(data.clone.power)) };
     }
     r.inputs[id] = input;
+    pc.autoTurns = 0;
     this.broadcastState();
     this.checkAllConfirmed();
   }
@@ -157,8 +160,17 @@ export class Game {
     const y = num(data.y);
     const d = Math.hypot(x, y);
     if (d > r.radius) return; // 판 위 어디든
-    r.cracks[id] = { x, y };
+    const max = this.crackMax();
+    if (!r.cracks[id] && Object.keys(r.cracks).length >= max) {
+      return this.opts.sendTo(id, { t: 'error', msg: `이번 턴 균열은 최대 ${max}개(생존자 수)예요. 이미 다 찼어요.` });
+    }
+    // 옮겨도 처음 놓은 순서는 유지
+    r.cracks[id] = { x, y, seq: r.cracks[id]?.seq ?? ++r.crackSeq };
     this.opts.sendTo(id, { t: 'crackOk', x, y });
+  }
+
+  crackMax() {
+    return Math.max(1, Math.round(this.aliveIds().length * CONFIG.crackMaxPerAlive));
   }
 
   checkAllConfirmed() {
@@ -189,7 +201,8 @@ export class Game {
     const alive = this.aliveIds();
     for (const id of alive) {
       const pc = r.pieces[id];
-      const inp = r.inputs[id] ?? { angle: 0, power: 0, useItem: false };
+      const inp = r.inputs[id] ?? { angle: 0, power: 0, useItem: false, auto: true };
+      if (inp.auto && !this.bots.has(id)) pc.autoTurns++;
       const item = inp.useItem ? pc.item : null;
       let power = inp.power;
       if (pc.capped) power = Math.min(power, CONFIG.crackPowerCap);
@@ -271,7 +284,9 @@ export class Game {
     for (const b of restore) Object.assign(r.pieces[b.id], { x: b.x, y: b.y });
 
     // 균열 효과: 이번 턴 제한은 해제하고, 균열 위에서 멈춘 말에 다음 턴 제한
-    const crackList = dedupeCracks(Object.entries(r.cracks).map(([owner, c]) => ({ ...c, owner })));
+    const crackList = dedupeCracks(
+      Object.entries(r.cracks).map(([owner, c]) => ({ x: c.x, y: c.y, owner, seq: c.seq })).sort((a, b) => a.seq - b.seq),
+    ).slice(0, Math.max(1, Math.round(alive.length * CONFIG.crackMaxPerAlive))).map(({ seq, ...c }) => c);
     for (const id of Object.keys(r.pieces)) r.pieces[id].capped = false;
     const capped = [];
     const crackHits = []; // {ghost: 균열 놓은 유령, victim: 걸린 사람}
@@ -311,6 +326,13 @@ export class Game {
       r.pieces[id].alive = false;
       r.eliminated++;
     }
+    // 자리 비움: 연속 afkTurns 턴 입력이 없으면 탈락 (장애물로 남지 않게)
+    const afkOut = this.aliveIds().filter((id) => r.pieces[id].autoTurns >= CONFIG.afkTurns);
+    for (const id of afkOut) {
+      r.fallSeq.push([id]);
+      r.pieces[id].alive = false;
+      r.eliminated++;
+    }
     // 판 밖으로 나간 상자 제거
     r.boxes = r.boxes.filter((b) => Math.hypot(b.x, b.y) < r.radius - CONFIG.itemBoxRadius);
 
@@ -337,12 +359,14 @@ export class Game {
       frames: sim.frames,
       frameDt: CONFIG.frameEvery / CONFIG.tickRate,
       falls: sim.falls.map((f) => ({ id: f.id, tick: f.tick, vx: round2(f.vx), vy: round2(f.vy) })),
+      hits: sim.hits,
       pickups: gained,
       revealed,
       cracks: crackList,
       capped,
       crackHits,
       meltOut,
+      afkOut,
       oldRadius,
       newRadius: r.radius,
       newBoxes,
@@ -480,6 +504,8 @@ export class Game {
       timeLeftMs: Math.max(0, r.deadline - Date.now()),
       boxes: r.boxes,
       holes: r.holes,
+      crackCount: Object.keys(r.cracks ?? {}).length,
+      crackMax: this.crackMax(),
       scores: this.scores,
       wins: this.wins,
       players: this.players.map((p) => {
@@ -502,7 +528,8 @@ export class Game {
     if (pc) {
       s.myItem = pc.item;
       s.myItemUsable = this.itemUsable(id);
-      s.myCrack = this.round.cracks?.[id] ?? null;
+      s.myCrack = this.round.cracks?.[id] ? { x: this.round.cracks[id].x, y: this.round.cracks[id].y } : null;
+      s.myAfkWarn = pc.alive && pc.autoTurns > 0 && pc.autoTurns < CONFIG.afkTurns; // 한 번 더 비우면 탈락
     }
     return s;
   }

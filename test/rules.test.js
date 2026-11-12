@@ -273,3 +273,63 @@ test('눈보라: 결과에 표시되고, 그 턴만 1.5배 멀리 미끄러짐',
   assert.ok(Math.abs(storm.moved / calm.moved - 1.5) < 0.02, `${calm.moved} → ${storm.moved}`);
   assert.ok(storm.tr.playbackSec > calm.tr.playbackSec, '안내 연출 시간만큼 재생이 길어짐');
 });
+
+test('균열 상한: 한 턴에 공개되는 균열은 생존자 수만큼, 먼저 놓은 순. 꽉 차면 새 균열은 거부', () => {
+  const { g, sent } = makeGame(7);
+  g.start();
+  const ids = Object.keys(g.round.pieces);
+  const [a, b] = ids; // 생존 2명
+  const ghosts = ids.slice(2); // 유령 5명
+  for (const id of ghosts) g.round.pieces[id].alive = false;
+  assert.equal(g.crackMax(), 2);
+  // 유령 5명이 서로 멀리 떨어진 곳에 균열 → 앞 2개만 채택, 3번째부터 거부
+  ghosts.forEach((id, i) => g.onCrack(id, { x: (i - 2) * 5, y: 10 }));
+  const errs = sent.filter((m) => m.t === 'error');
+  assert.equal(errs.length, 3);
+  assert.match(errs[0].msg, /최대 2개/);
+  // 먼저 놓은 사람은 옮겨도 자리를 잃지 않음
+  g.onCrack(ghosts[0], { x: 0, y: -10 });
+  g.onAim(a, { angle: 0, power: 0 });
+  g.onAim(b, { angle: 0, power: 0 });
+  const tr = sent.find((m) => m.t === 'turnResult');
+  assert.equal(tr.cracks.length, 2);
+  assert.deepEqual(tr.cracks.map((c) => c.owner), [ghosts[0], ghosts[1]]);
+  assert.deepEqual(tr.cracks[0], { x: 0, y: -10, owner: ghosts[0] });
+  g.stop();
+});
+
+test('자리 비움: 연속 2턴 입력이 없으면 탈락, 중간에 입력하면 초기화. 봇은 해당 없음', () => {
+  const { g, sent } = makeGame(3, { bots: ['p2'] });
+  g.start();
+  const turn = () => {
+    g.onAim('p0', { angle: 0, power: 0 });
+    g.onAim('p2', { angle: 0, power: 0 }); // 봇
+    clearTimeout(g.timer);
+    g.launch(); // p1은 입력 없음(시간 초과)
+    const tr = sent.filter((m) => m.t === 'turnResult').at(-1);
+    g.startAim();
+    return tr;
+  };
+  const t1 = turn();
+  assert.deepEqual(t1.afkOut, []);
+  assert.equal(g.stateFor('p1').myAfkWarn, true, '한 번 비우면 경고');
+  // p1이 이번 턴에는 입력 → 초기화
+  g.onAim('p1', { angle: 0, power: 0 });
+  const t2 = turn();
+  assert.deepEqual(t2.afkOut, []);
+  assert.equal(g.round.pieces.p1.autoTurns, 0, '입력한 턴은 0으로');
+  const t3 = turn();
+  assert.deepEqual(t3.afkOut, []);
+  assert.equal(g.round.pieces.p1.autoTurns, 1);
+  const t4 = turn();
+  assert.deepEqual(t4.afkOut, ['p1'], '연속 2턴 비우면 탈락');
+  assert.equal(g.round.pieces.p1.alive, false);
+  assert.equal(g.round.pieces.p2.alive, true, '봇은 탈락하지 않음');
+  g.stop();
+});
+
+test('충돌은 효과음용으로 {tick, v}가 결과에 실림', () => {
+  const res = simulate([body('a', 0, 0, 5, 0), body('b', 3, 0)], { boardRadius: 100 });
+  assert.ok(res.hits.length >= 1);
+  assert.ok(res.hits[0].v > 1 && res.hits[0].tick > 0, JSON.stringify(res.hits[0])); // 마찰로 줄어든 뒤 충돌
+});

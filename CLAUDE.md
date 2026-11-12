@@ -9,6 +9,7 @@
 - `npm start` 서버 실행 (포트 3000). `npm run dev`는 server/shared 변경 시 자동 재시작
 - `npm test` — `node --test test/*.test.js`. 머지 전 반드시 통과해야 함
 - 테스트용 환경변수: `AIM_TIME_MS`(조준 시간), `WARMING_CHANCE`, `BLIZZARD_CHANCE`(0~1, 1이면 매 턴), `DEBUG_WS=1`(수신 메시지 로그)
+- 운영 환경변수: `ALLOWED_ORIGINS`, `MAX_CONN_PER_IP`, `TRUST_PROXY`, `REPORTS_FILE` (README 배포 절 참고). 로컬에서는 모두 비워도 된다
 - 브라우저 확인은 `?debug`를 붙이면 `window.__peng.scene`이 노출된다. headless Chrome + puppeteer-core로 자동 확인할 때 쓴다 (스크립트는 저장소에 없음)
 
 ## 구조
@@ -22,7 +23,9 @@ server/game.js     Game 클래스. 판 → 턴(aim → launch → cleanup) → �
 server/bot.js      혼자 연습용 봇의 조준·균열
 public/js/main.js  UI·WebSocket 클라이언트·입력. BASE_PATH는 location.pathname에서 계산(서브경로 배포)
 public/js/scene.js Three.js 장면: 판·펭귄·화살표·구멍·균열·눈보라 연출·카메라
+public/js/sound.js WebAudio로 합성한 효과음. scene.onEvent(name)로 연결됨
 test/rules.test.js 규칙 단위 테스트 (Game을 직접 만들어 호출)
+test/lobby.test.js 방·접속·신고·강퇴 (Lobby를 가짜 ws로 직접 호출)
 test/e2e.test.js   서버를 띄우고 WebSocket으로 흐름 확인
 ```
 
@@ -37,10 +40,14 @@ test/e2e.test.js   서버를 띄우고 WebSocket으로 흐름 확인
 - 새 규칙을 넣으면 `test/rules.test.js`에 테스트를 같이 넣는다. 테스트는 `makeGame(n, extra)`로 Game을 만들고 `random`을 고정 시드로 준다. 이벤트 확률(`warmingChance`, `blizzardChance`)은 테스트에서 0으로 끄고 필요할 때만 1로 켠다
 - 사용자에게 보이는 문구를 바꾸면 `public/index.html`의 규칙 요약과 `README.md` 조작표도 맞춘다
 - 클라이언트에 사용자 입력을 넣을 때는 `esc()`를 거친다(`main.js` 끝). `textContent`가 가능하면 그쪽을 쓴다
+- **서버↔클라이언트 메시지 모양을 바꾸면 `shared/config.js`의 `PROTOCOL`을 1 올린다.** 옛 탭이 새로고침 안내를 받는 유일한 수단
+- 테스트에서 `Game`을 시작했으면 끝에 반드시 `g.stop()`(또는 `room.game.stop()`) — 타이머가 남으면 테스트 프로세스가 안 끝난다
+- `index.html`의 인라인 `<script>`는 importmap 하나뿐이어야 한다(CSP가 그 해시만 허용). 스크립트는 파일로 뺀다
 
 ## 배포
 
 - Docker: `node:22-alpine`, 비root(`USER node`), `/healthz` 헬스체크. 서버 프로세스는 반드시 1개(상태가 메모리에만 있음)
 - 운영 서버: SSAFY EC2(Ubuntu), nginx가 `/pengkkaki/`를 `127.0.0.1:3000`으로 프록시(Upgrade 헤더 있음). 같은 nginx가 다른 프로젝트도 서빙하므로 `/`는 건드리지 않는다
-- 재배포: `cd ~/peng-kkaki && git pull && docker build -t peng-kkaki . && docker rm -f peng-kkaki && docker run -d --name peng-kkaki --restart unless-stopped -p 3000:3000 peng-kkaki`
+- 재배포: `cd ~/peng-kkaki && git pull && docker build -t peng-kkaki . && docker rm -f peng-kkaki && docker run -d --name peng-kkaki --restart unless-stopped -p 3000:3000 -v ~/peng-kkaki-data:/app/data -e ALLOWED_ORIGINS=https://t1516.p.ssafy.io peng-kkaki`
+- PR마다 GitHub Actions가 `npm test`를 돌린다(`.github/workflows/test.yml`)
 - 재시작하면 진행 중인 게임이 사라진다(설계상 허용)
