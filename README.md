@@ -57,6 +57,8 @@ PORT=3000 node server/index.js     # pm2/systemd 등으로 상시 실행
 
 ## 구조
 
+작업 규칙과 AI 작업 가이드는 `CLAUDE.md`, 할 일 목록은 `docs/BACKLOG.md`에 있습니다.
+
 ```
 shared/config.js    조정 가능한 수치(판 크기·이동 거리 등) + 서버/클라 공용 계산
 shared/physics.js   바닥 평면 2D 물리 (일정 감속, 반발계수 0.9, 낙하·상자 획득 판정)
