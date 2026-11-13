@@ -209,8 +209,10 @@ export class GameScene {
   }
 
   // 공개된 유령 균열 + 위에 뜨는 설명 (산 사람도 뭔지 알 수 있게)
+  // 설명은 발사 직전까지만 보이고, 펭귄이 출발하면 숨겨서 미끄러지는 장면을 가리지 않는다 (균열 무늬는 남음)
   setCracks(cracks) {
     this.crackGroup.clear();
+    this.crackLabels = [];
     for (const c of cracks) {
       const m = makeCrack('#3b2a6b', 1);
       m.position.set(c.x, 0.035, c.y);
@@ -218,7 +220,12 @@ export class GameScene {
       label.position.set(0, 2.2, 0);
       m.add(label);
       this.crackGroup.add(m);
+      this.crackLabels.push(label);
     }
+  }
+
+  hideCrackLabels() {
+    for (const l of this.crackLabels ?? []) l.visible = false;
   }
 
   // ───────── 말 ─────────
@@ -475,6 +482,7 @@ export class GameScene {
       if (pb.t >= CONFIG.launchIntroSec) {
         pb.stage = 'sim';
         pb.t = 0;
+        this.hideCrackLabels(); // 펭귄이 출발하면 균열 설명은 치움
         this.onEvent?.('launch');
       }
       return;
