@@ -208,16 +208,30 @@ export class GameScene {
     if (c) this.myCrackMarker.position.set(c.x, 0.04, c.y);
   }
 
-  // 공개된 유령 균열 + 위에 뜨는 설명 (산 사람도 뭔지 알 수 있게)
+  // 공개된 유령 균열 + 작은 배지. 배지는 균열 바로 위에 잠깐 떴다가 흐려지고 균열 무늬만 남는다
+  // (발사 재생 중에 판과 펭귄을 가리지 않게. 자세한 설명은 채팅으로 나감)
   setCracks(cracks) {
     this.crackGroup.clear();
+    this.crackLabels = [];
+    const now = performance.now() / 1000;
     for (const c of cracks) {
       const m = makeCrack('#3b2a6b', 1);
       m.position.set(c.x, 0.035, c.y);
-      const label = makeTextSprite(['👻 유령 균열', '멈추면 다음 턴 세기 50%'], '#e9ddff');
-      label.position.set(0, 2.2, 0);
+      const label = makeTextSprite(['👻 세기 50%'], '#e9ddff', { size: 0.17, fit: true });
+      label.material.depthTest = true; // 앞에 있는 펭귄이 배지를 가리게
+      label.position.set(0, 0.5, 0);
       m.add(label);
       this.crackGroup.add(m);
+      this.crackLabels.push({ sprite: label, born: now });
+    }
+  }
+
+  updateCrackLabels(now) {
+    for (const l of this.crackLabels ?? []) {
+      const age = now - l.born;
+      const a = age < CRACK_LABEL_HOLD_SEC ? 1 : Math.max(0, 1 - (age - CRACK_LABEL_HOLD_SEC) / CRACK_LABEL_FADE_SEC);
+      l.sprite.material.opacity = a;
+      l.sprite.visible = a > 0;
     }
   }
 
@@ -860,6 +874,7 @@ export class GameScene {
     this.updateFx(dt);
     this.updateSnow(dt);
     this.updateCamera(dt);
+    this.updateCrackLabels(t);
     this.updateLabels();
     this.renderer.render(this.scene, this.camera);
   }
@@ -1051,11 +1066,26 @@ function jaggedRing(r, n, jitter) {
 }
 
 // 카메라를 항상 바라보는 글자 표지판
-function makeTextSprite(lines, color) {
+const CRACK_LABEL_HOLD_SEC = 2.5; // 공개된 균열 배지가 또렷이 보이는 시간 (초)
+const CRACK_LABEL_FADE_SEC = 0.8; // 그 뒤 사라지는 데 걸리는 시간 (초)
+
+// size: 폭 512px 그림판일 때 화면 높이 대비 가로 크기 (거리와 상관없이 일정). 글자 크기는 size에 비례
+// fit: 그림판 폭을 글자 길이에 맞춤 (짧은 배지가 큰 빈 상자가 되지 않게)
+function makeTextSprite(lines, color, { size = 0.26, fit = false } = {}) {
   const c = document.createElement('canvas');
-  c.width = 512;
-  c.height = 64 * lines.length + 16;
   const x = c.getContext('2d');
+  const fontOf = (i) => (i === 0 ? 'bold 40px sans-serif' : '32px sans-serif');
+  let w = 512;
+  if (fit) {
+    w = 0;
+    lines.forEach((t, i) => {
+      x.font = fontOf(i);
+      w = Math.max(w, x.measureText(t).width);
+    });
+    w = Math.min(512, Math.ceil(w) + 56);
+  }
+  c.width = w;
+  c.height = 64 * lines.length + 16;
   x.fillStyle = 'rgba(20, 10, 45, 0.78)';
   x.beginPath();
   x.roundRect(4, 4, c.width - 8, c.height - 8, 24);
@@ -1063,7 +1093,7 @@ function makeTextSprite(lines, color) {
   x.textAlign = 'center';
   x.textBaseline = 'middle';
   lines.forEach((t, i) => {
-    x.font = i === 0 ? 'bold 40px sans-serif' : '32px sans-serif';
+    x.font = fontOf(i);
     x.fillStyle = i === 0 ? color : '#ffffff';
     x.fillText(t, c.width / 2, 40 + i * 64);
   });
@@ -1072,7 +1102,8 @@ function makeTextSprite(lines, color) {
   // 거리와 상관없이 화면에서 같은 크기로 보이게 (큰 판을 멀리서 봐도 읽힘)
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, sizeAttenuation: false }));
   sp.renderOrder = 20;
-  sp.scale.set(0.26, (0.26 * c.height) / c.width, 1);
+  const sx = (size * c.width) / 512;
+  sp.scale.set(sx, (sx * c.height) / c.width, 1);
   return sp;
 }
 
